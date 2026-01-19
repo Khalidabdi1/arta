@@ -9,10 +9,56 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # =============================================================================
+  # VALIDATE JOB - Ensure all tests pass before release
+  # =============================================================================
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      
+      - name: Run tests
+        run: cargo test --verbose
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      
+      - name: Run Clippy
+        run: cargo clippy -- -D warnings
+      
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          
+          echo "Tag version: $TAG_VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "ERROR: Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+          
+          echo "Version check passed!"
+
+  # =============================================================================
+  # BUILD RELEASE JOB - Build binaries for all platforms
+  # =============================================================================
   build-release:
-    name: Build Release
+    name: Build (${{ matrix.target }})
+    needs: validate
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           # Linux x86_64
@@ -27,7 +73,7 @@ jobs:
             artifact_name: arta
             asset_name: arta-linux-aarch64
           
-          # macOS x86_64
+          # macOS x86_64 (Intel)
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: arta
@@ -43,16 +89,30 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: arta.exe
-            asset_name: arta-windows-x86_64.exe
+            asset_name: arta-windows-x86_64
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
+      
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-release-
       
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -70,27 +130,39 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           tar czvf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          cd ../../..
+          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
       
       - name: Create zip (Windows)
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
           7z a ../../../${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
+          cd ../../..
+          Get-FileHash ${{ matrix.asset_name }}.zip -Algorithm SHA256 | Format-List Hash | Out-File -Encoding ASCII ${{ matrix.asset_name }}.zip.sha256
       
       - name: Upload artifact (Unix)
         if: matrix.os != 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: ${{ matrix.asset_name }}.tar.gz
+          path: |
+            ${{ matrix.asset_name }}.tar.gz
+            ${{ matrix.asset_name }}.tar.gz.sha256
       
       - name: Upload artifact (Windows)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: ${{ matrix.asset_name }}.zip
+          path: |
+            ${{ matrix.asset_name }}.zip
+            ${{ matrix.asset_name }}.zip.sha256
 
+  # =============================================================================
+  # CREATE RELEASE JOB - Create GitHub release with all artifacts
+  # =============================================================================
   create-release:
     name: Create Release
     needs: build-release
@@ -99,7 +171,10 @@ jobs:
       contents: write
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -107,30 +182,142 @@ jobs:
           path: artifacts
       
       - name: Get version from tag
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_NUM=${VERSION#v}" >> $GITHUB_OUTPUT
       
-      - name: Create Release
+      - name: Get changelog section
+        id: changelog
+        run: |
+          # Try to extract changelog for this version
+          if [ -f CHANGELOG.md ]; then
+            # Extract section between version headers
+            SECTION=$(sed -n "/^## \[${{ steps.version.outputs.VERSION_NUM }}\]/,/^## \[/p" CHANGELOG.md | sed '$d' || echo "")
+            if [ -n "$SECTION" ]; then
+              echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+              echo "$SECTION" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            fi
+          fi
+      
+      - name: Generate release notes
+        run: |
+          cat << 'EOF' > release_notes.md
+          # Arta ${{ steps.version.outputs.VERSION }}
+          
+          **A SQL-like DSL for querying and managing system state**
+          
+          ## Highlights
+          
+          - **SQL-like Syntax** - Query your system with familiar commands
+          - **LIFE Monitoring** - Real-time reactive monitoring of system resources
+          - **Containers** - Sandboxed execution environments with isolated context
+          - **Script Support** - Write and execute `.arta` script files
+          - **Cross-platform** - Full support for Linux, macOS, and Windows
+          
+          ${{ steps.changelog.outputs.CHANGELOG }}
+          
+          ## Downloads
+          
+          | Platform | Architecture | Download | Checksum |
+          |----------|-------------|----------|----------|
+          | **Linux** | x86_64 | [arta-linux-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-linux-x86_64.tar.gz) | [SHA256](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-linux-x86_64.tar.gz.sha256) |
+          | **Linux** | ARM64 | [arta-linux-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-linux-aarch64.tar.gz) | [SHA256](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-linux-aarch64.tar.gz.sha256) |
+          | **macOS** | Intel | [arta-macos-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-macos-x86_64.tar.gz) | [SHA256](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-macos-x86_64.tar.gz.sha256) |
+          | **macOS** | Apple Silicon | [arta-macos-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-macos-aarch64.tar.gz) | [SHA256](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-macos-aarch64.tar.gz.sha256) |
+          | **Windows** | x86_64 | [arta-windows-x86_64.zip](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-windows-x86_64.zip) | [SHA256](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-windows-x86_64.zip.sha256) |
+          
+          ## Installation
+          
+          ### Linux / macOS
+          
+          ```bash
+          # Download and extract (replace <platform> with your architecture)
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/arta-<platform>.tar.gz
+          tar xzf arta-<platform>.tar.gz
+          
+          # Make executable and move to PATH
+          chmod +x arta
+          sudo mv arta /usr/local/bin/
+          
+          # Verify installation
+          arta --version
+          ```
+          
+          ### Windows
+          
+          1. Download `arta-windows-x86_64.zip`
+          2. Extract the ZIP file
+          3. Add the extracted folder to your PATH
+          4. Run `arta --version` to verify
+          
+          ### From Source
+          
+          ```bash
+          git clone https://github.com/${{ github.repository }}.git
+          cd arta
+          cargo build --release
+          ./target/release/arta --version
+          ```
+          
+          ## Quick Start
+          
+          ```bash
+          # Query system information
+          arta query "SELECT CPU *"
+          arta query "SELECT MEMORY *"
+          arta query "SELECT PROCESS * WHERE cpu > 10"
+          
+          # Run a script
+          arta run examples/health_check.arta
+          
+          # Live monitoring
+          arta life cpu --interval 2
+          
+          # Start interactive REPL
+          arta repl
+          ```
+          
+          ## Documentation
+          
+          - [README](https://github.com/${{ github.repository }}#readme)
+          - [Examples](https://github.com/${{ github.repository }}/tree/main/examples)
+          
+          ---
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/...(${{ steps.version.outputs.VERSION }})
+          EOF
+      
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Arta ${{ steps.get_version.outputs.VERSION }}
+          name: Arta ${{ steps.version.outputs.VERSION }}
+          body_path: release_notes.md
           draft: false
-          prerelease: false
-          generate_release_notes: true
+          prerelease: ${{ contains(steps.version.outputs.VERSION, 'alpha') || contains(steps.version.outputs.VERSION, 'beta') || contains(steps.version.outputs.VERSION, 'rc') }}
+          generate_release_notes: false
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
+            artifacts/**/*.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # =============================================================================
+  # PUBLISH CRATE JOB - Publish to crates.io
+  # =============================================================================
   publish-crate:
     name: Publish to crates.io
     needs: create-release
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -138,3 +325,33 @@ jobs:
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
+
+  # =============================================================================
+  # NOTIFY JOB - Send release notification (optional)
+  # =============================================================================
+  notify:
+    name: Release Notification
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: always() && needs.create-release.result == 'success'
+    
+    steps:
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Release Summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Released successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- arta-linux-x86_64.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "- arta-linux-aarch64.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "- arta-macos-x86_64.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "- arta-macos-aarch64.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "- arta-windows-x86_64.zip" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.VERSION }})" >> $GITHUB_STEP_SUMMARY

@@ -10,22 +10,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # =============================================================================
+  # TEST JOB - Run tests on all platforms
+  # =============================================================================
   test:
-    name: Test
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         rust: [stable]
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.rust }}
       
-      - name: Cache cargo
+      - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
@@ -47,13 +53,18 @@ jobs:
       - name: Build with REPL feature
         run: cargo build --features repl --verbose
 
+  # =============================================================================
+  # LINT JOB - Check code quality
+  # =============================================================================
   lint:
-    name: Lint
+    name: Lint & Format
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -62,28 +73,289 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       
-      - name: Clippy
+      - name: Run Clippy
         run: cargo clippy -- -D warnings
+      
+      - name: Run Clippy (with REPL)
+        run: cargo clippy --features repl -- -D warnings
 
+  # =============================================================================
+  # BUILD ARTIFACTS JOB - Build release binaries for all platforms
+  # Only runs on push to main (not PRs)
+  # =============================================================================
+  build-artifacts:
+    name: Build (${{ matrix.target }})
+    needs: [test, lint]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: arta
+            asset_name: arta-linux-x86_64
+          
+          # Linux ARM64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: arta
+            asset_name: arta-linux-aarch64
+          
+          # macOS x86_64 (Intel)
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: arta
+            asset_name: arta-macos-x86_64
+          
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: arta
+            asset_name: arta-macos-aarch64
+          
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: arta.exe
+            asset_name: arta-windows-x86_64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      
+      - name: Create tarball (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czvf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          cd ../../..
+          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+      
+      - name: Create zip (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
+          cd ../../..
+          Get-FileHash ${{ matrix.asset_name }}.zip -Algorithm SHA256 | Format-List Hash | Out-File -Encoding ASCII ${{ matrix.asset_name }}.zip.sha256
+      
+      - name: Upload artifact (Unix)
+        if: matrix.os != 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            ${{ matrix.asset_name }}.tar.gz
+            ${{ matrix.asset_name }}.tar.gz.sha256
+          retention-days: 7
+      
+      - name: Upload artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            ${{ matrix.asset_name }}.zip
+            ${{ matrix.asset_name }}.zip.sha256
+          retention-days: 7
+
+  # =============================================================================
+  # AUTO-RELEASE JOB - Create beta release on every push to main
+  # =============================================================================
+  auto-release:
+    name: Create Beta Release
+    needs: build-artifacts
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Get version info
+        id: version
+        run: |
+          # Get version from Cargo.toml
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Generate beta tag with date and short SHA
+          DATE=$(date +'%Y%m%d')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          BETA_TAG="Beta-${DATE}-${SHORT_SHA}"
+          echo "BETA_TAG=$BETA_TAG" >> $GITHUB_OUTPUT
+          
+          # Get commit count for build number
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          echo "BUILD_NUMBER=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          
+          # Get recent commits for release notes
+          echo "RECENT_COMMITS<<EOF" >> $GITHUB_OUTPUT
+          git log --oneline -10 >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat << 'EOF' > release_notes.md
+          # Arta ${{ steps.version.outputs.BETA_TAG }}
+          
+          **Version:** ${{ steps.version.outputs.VERSION }} (Build #${{ steps.version.outputs.BUILD_NUMBER }})
+          **Type:** Beta Release (Automated)
+          **Date:** $(date +'%Y-%m-%d %H:%M UTC')
+          
+          ## What's New
+          
+          This is an automated beta release from the `main` branch.
+          
+          ### Features
+          - **SQL-like DSL** for querying system state
+          - **LIFE Monitoring** - Real-time reactive system monitoring
+          - **Containers** - Sandboxed execution environments
+          - **Script Support** - Execute `.arta` script files
+          - **Cross-platform** - Linux, macOS, Windows support
+          
+          ### Recent Changes
+          ```
+          ${{ steps.version.outputs.RECENT_COMMITS }}
+          ```
+          
+          ## Downloads
+          
+          | Platform | Architecture | File |
+          |----------|-------------|------|
+          | Linux | x86_64 | `arta-linux-x86_64.tar.gz` |
+          | Linux | ARM64 | `arta-linux-aarch64.tar.gz` |
+          | macOS | Intel | `arta-macos-x86_64.tar.gz` |
+          | macOS | Apple Silicon | `arta-macos-aarch64.tar.gz` |
+          | Windows | x86_64 | `arta-windows-x86_64.zip` |
+          
+          ## Installation
+          
+          ```bash
+          # Linux/macOS
+          tar xzf arta-<platform>.tar.gz
+          chmod +x arta
+          sudo mv arta /usr/local/bin/
+          
+          # Verify installation
+          arta --version
+          ```
+          
+          ## Quick Start
+          
+          ```bash
+          # Query CPU info
+          arta query "SELECT CPU *"
+          
+          # Query memory
+          arta query "SELECT MEMORY *"
+          
+          # Run a script
+          arta run examples/health_check.arta
+          ```
+          
+          ---
+          **Note:** This is a beta release. For stable releases, please use tagged versions (e.g., `v0.4.0`).
+          EOF
+      
+      - name: Delete existing beta release (if exists)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete old beta releases (keep only the latest)
+          gh release list --limit 10 | grep "Beta-" | tail -n +2 | awk '{print $1}' | while read tag; do
+            echo "Deleting old beta release: $tag"
+            gh release delete "$tag" --yes --cleanup-tag || true
+          done
+      
+      - name: Create Beta Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.BETA_TAG }}
+          name: "Arta ${{ steps.version.outputs.BETA_TAG }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: true
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/**/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =============================================================================
+  # COVERAGE JOB - Generate code coverage report
+  # =============================================================================
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       
+      - name: Cache cargo-tarpaulin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tarpaulin
+          key: cargo-tarpaulin-${{ runner.os }}
+      
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+        run: |
+          if ! command -v cargo-tarpaulin &> /dev/null; then
+            cargo install cargo-tarpaulin
+          fi
       
       - name: Generate coverage report
-        run: cargo tarpaulin --out Xml
+        run: cargo tarpaulin --out Xml --out Html
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           files: ./cobertura.xml
           fail_ci_if_error: false
+      
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: tarpaulin-report.html
+          retention-days: 30
