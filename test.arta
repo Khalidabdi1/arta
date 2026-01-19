@@ -1,0 +1,11 @@
+PRINT "=== System Check ===";
+
+SELECT CPU cores, usage;
+SELECT MEMORY total, used, free;
+
+IF SELECT CPU usage > 50 THEN
+    PRINT "CPU usage is high!";
+    SELECT PROCESS * WHERE cpu > 5;
+END IF;
+
+PRINT "=== Done ===";
