@@ -1,0 +1,21 @@
+-- Example: Process Monitor
+-- Monitor running processes and find resource hogs
+
+PRINT "=== Process Monitor ===";
+
+-- Show all processes
+PRINT "Top processes by CPU:";
+SELECT PROCESS * WHERE cpu > 5;
+
+PRINT "Top processes by Memory:";
+SELECT PROCESS * WHERE memory > 50MB;
+
+-- Look for specific processes
+PRINT "=== Looking for common applications ===";
+
+FOR proc IN SELECT PROCESS * DO
+    -- You can add logic here to track specific processes
+    LET current_process = proc.name;
+END FOR;
+
+PRINT "=== Process Monitor Complete ===";

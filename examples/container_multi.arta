@@ -1,0 +1,60 @@
+-- container_multi.arta
+-- Example showing multiple containers for different purposes
+
+-- Create a container for monitoring tasks
+CREATE CONTAINER "monitor" DO
+    LET cpu_threshold = 80;
+    LET memory_threshold = 75;
+    
+    PRINT "Monitor container initialized";
+    PRINT "CPU threshold:", cpu_threshold;
+    PRINT "Memory threshold:", memory_threshold;
+END CONTAINER;
+
+-- Create a container for file operations (readonly mode)
+CREATE CONTAINER "files" WITH READONLY DO
+    LET base_path = /tmp;
+    
+    PRINT "File browser container initialized (readonly)";
+    ENTER FOLDER /tmp;
+END CONTAINER;
+
+-- Create a container that allows actions (requires --allow-actions flag)
+CREATE CONTAINER "cleanup" WITH ALLOW ACTIONS DO
+    LET cleanup_path = /tmp;
+    LET max_age = 7;
+    
+    PRINT "Cleanup container initialized (actions enabled)";
+END CONTAINER;
+
+-- List all containers we created
+PRINT "=== All Containers ===";
+LIST CONTAINERS;
+
+-- Use the monitor container
+SWITCH CONTAINER "monitor";
+PRINT "=== System Health Check ===";
+SELECT CPU *;
+SELECT MEMORY *;
+
+-- Use the files container
+SWITCH CONTAINER "files";
+PRINT "=== File Browser ===";
+SELECT FILES * FROM /tmp;
+
+-- Switch to cleanup (actions container)
+SWITCH CONTAINER "cleanup";
+PRINT "=== Cleanup Tasks ===";
+-- In dry-run mode, show what would be cleaned
+SELECT FILES * FROM /tmp;
+
+-- Return to default and clean up
+SWITCH CONTAINER "default";
+
+-- Destroy all containers when done
+DESTROY CONTAINER "monitor";
+DESTROY CONTAINER "files";
+DESTROY CONTAINER "cleanup";
+
+PRINT "All containers destroyed";
+LIST CONTAINERS;

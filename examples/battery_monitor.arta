@@ -1,0 +1,13 @@
+-- Example: Battery Monitor with LIFE
+-- Continuously monitor battery status
+
+PRINT "Starting battery monitor...";
+PRINT "Press Ctrl+C to stop";
+
+LIFE MONITOR BATTERY DO
+    PRINT BATTERY level, BATTERY state;
+    
+    IF SELECT BATTERY level < 20 THEN
+        PRINT "WARNING: Low battery!";
+    END IF;
+END LIFE;

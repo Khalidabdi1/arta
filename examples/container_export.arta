@@ -1,0 +1,36 @@
+-- container_export.arta
+-- Example showing container export functionality
+
+-- Create a container with complex state
+CREATE CONTAINER "project_env" DO
+    -- Project-specific variables
+    LET project_name = "my_app";
+    LET version = "1.0.0";
+    LET log_level = "debug";
+    LET max_connections = 100;
+    
+    -- Set up context
+    PRINT "Project environment configured:";
+    PRINT "  Name:", project_name;
+    PRINT "  Version:", version;
+    PRINT "  Log Level:", log_level;
+    
+    -- Capture initial system state
+    SELECT SYSTEM *;
+END CONTAINER;
+
+-- Work with the container
+SWITCH CONTAINER "project_env";
+SELECT CPU *;
+SELECT MEMORY *;
+
+-- Export the container for later use or sharing
+EXPORT CONTAINER "project_env" TO /tmp/project_env.arta;
+PRINT "Container exported to /tmp/project_env.arta";
+
+-- List containers
+LIST CONTAINERS;
+
+-- Clean up
+SWITCH CONTAINER "default";
+DESTROY CONTAINER "project_env";

@@ -1,0 +1,197 @@
+// Arta DSL Grammar
+// A SQL-like language for querying and managing system state
+
+// Entry point - a single command (can be control flow which contains multiple statements)
+command = { SOI ~ statement ~ ";"? ~ EOI }
+
+// Script entry point - multiple statements separated by semicolons
+script = { SOI ~ (statement ~ ";"?)* ~ EOI }
+
+// A statement can be a simple command or control flow
+statement = { container_cmd | life_cmd | for_cmd | if_cmd | simple_cmd }
+
+// Simple commands (non-control-flow)
+simple_cmd = { print_cmd | explain_cmd | let_cmd | context_cmd | query_cmd | action_cmd }
+
+// ============================================================================
+// Container Commands - Sandboxed execution environments
+// ============================================================================
+container_cmd = { create_container | switch_container | list_containers | destroy_container | export_container }
+
+create_container = {
+    ^"CREATE" ~ ^"CONTAINER" ~ container_name ~ container_options? ~ ^"DO" ~
+    statement_block ~
+    ^"END" ~ ^"CONTAINER"
+}
+
+switch_container = { ^"SWITCH" ~ ^"CONTAINER" ~ container_name }
+list_containers = { ^"LIST" ~ ^"CONTAINERS" }
+destroy_container = { ^"DESTROY" ~ ^"CONTAINER" ~ container_name }
+export_container = { ^"EXPORT" ~ ^"CONTAINER" ~ container_name ~ ^"TO" ~ path_value }
+
+container_name = { string_value | identifier }
+container_options = { ^"WITH" ~ container_option ~ ("," ~ container_option)* }
+container_option = { allow_actions_opt | readonly_opt }
+allow_actions_opt = { ^"ALLOW" ~ ^"ACTIONS" }
+readonly_opt = { ^"READONLY" }
+
+// ============================================================================
+// LIFE Monitoring - Continuous monitoring blocks
+// ============================================================================
+life_cmd = {
+    ^"LIFE" ~ ^"MONITOR" ~ life_target ~ ^"DO" ~
+    statement_block ~
+    ^"END" ~ ^"LIFE"
+}
+
+life_target = {
+    ^"BATTERY" | ^"MEMORY" | ^"CPU" | ^"DISK" | ^"NETWORK" | ^"PROCESSES"
+}
+
+// ============================================================================
+// PRINT Command - Output values during execution
+// ============================================================================
+print_cmd = { ^"PRINT" ~ print_expr ~ ("," ~ print_expr)* }
+print_expr = { query_target ~ field | string_value | identifier }
+
+// ============================================================================
+// FOR Loop - Iterate over query results
+// ============================================================================
+for_cmd = { 
+    ^"FOR" ~ iterator_var ~ ^"IN" ~ query_cmd ~ ^"DO" ~ 
+    statement_block ~ 
+    ^"END" ~ ^"FOR" 
+}
+
+iterator_var = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// Block of statements (for loop/if bodies)
+statement_block = { (statement ~ ";"?)* }
+
+// ============================================================================
+// IF Conditional - Execute based on query condition
+// ============================================================================
+if_cmd = {
+    ^"IF" ~ if_condition ~ ^"THEN" ~
+    statement_block ~
+    else_clause? ~
+    ^"END" ~ ^"IF"
+}
+
+else_clause = { ^"ELSE" ~ statement_block }
+
+// Condition for IF: query result compared to a value
+// e.g., SELECT MEMORY used_percent > 80
+// e.g., SELECT CPU usage > 90
+if_condition = { 
+    ^"SELECT" ~ query_target ~ field ~ compare_op ~ value
+}
+
+// ============================================================================
+// LET Command - Variable assignment
+// ============================================================================
+let_cmd = { ^"LET" ~ variable_name ~ "=" ~ let_value }
+variable_name = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+let_value = { size_value | number | boolean | string_value | path_value }
+
+// ============================================================================
+// EXPLAIN Command - Shows execution plan without running
+// ============================================================================
+explain_cmd = { ^"EXPLAIN" ~ (query_cmd | action_cmd) }
+
+// ============================================================================
+// Context Commands - Navigation and state management
+// ============================================================================
+context_cmd = { enter_cmd | exit_cmd | reset_cmd | show_cmd }
+
+enter_cmd = { ^"ENTER" ~ (enter_folder | enter_file) }
+enter_folder = { ^"FOLDER" ~ path_value }
+enter_file = { ^"FILE" ~ path_value }
+
+exit_cmd = { ^"EXIT" ~ (^"CONTEXT")? }
+
+reset_cmd = { ^"RESET" ~ (^"CONTEXT")? }
+
+show_cmd = { ^"SHOW" ~ show_target }
+show_target = { ^"CONTEXT" | ^"VARIABLES" | ^"HISTORY" }
+
+// ============================================================================
+// SELECT Queries - Read-only system information retrieval
+// ============================================================================
+query_cmd = { ^"SELECT" ~ query_target ~ field_list ~ from_clause? ~ where_clause? }
+
+query_target = {
+    ^"CONTENT"
+    | ^"BATTERY"
+    | ^"CPU"
+    | ^"MEMORY"
+    | ^"DISK"
+    | ^"NETWORK"
+    | ^"SYSTEM"
+    | ^"PROCESS"
+    | ^"PROCESSES"
+    | ^"FILES"
+}
+
+field_list = { star | (field ~ ("," ~ field)*) }
+star = { "*" }
+field = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+from_clause = { ^"FROM" ~ path_value }
+
+// ============================================================================
+// WHERE Clause - Filtering conditions
+// ============================================================================
+where_clause = { ^"WHERE" ~ condition_expr }
+
+condition_expr = { condition ~ ((and_op | or_op) ~ condition)* }
+and_op = { ^"AND" }
+or_op = { ^"OR" }
+
+condition = { field ~ compare_op ~ value }
+
+compare_op = {
+    ">=" | "<=" | "!=" | "=" | ">" | "<" | ^"LIKE" | ^"CONTAINS" | ^"MATCHES"
+}
+
+// ============================================================================
+// Action Commands - System modifications (require explicit enablement)
+// ============================================================================
+action_cmd = { delete_cmd | kill_cmd }
+
+delete_cmd = { ^"DELETE" ~ ^"FILES" ~ ^"FROM" ~ path_value ~ where_clause? }
+kill_cmd = { ^"KILL" ~ ^"PROCESS" ~ where_clause }
+
+// ============================================================================
+// Values and Literals
+// ============================================================================
+value = { size_value | number | boolean | string_value | identifier }
+
+// String values (quoted)
+string_value = ${ "\"" ~ inner_string ~ "\"" }
+inner_string = @{ (!("\"" | "\\") ~ ANY | "\\" ~ ANY)* }
+
+// Numeric values
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+// Size values with units (e.g., 100MB, 1.5GB)
+size_value = ${ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ size_unit }
+size_unit = @{ ^"TB" | ^"GB" | ^"MB" | ^"KB" | ^"B" }
+
+// Boolean values
+boolean = { ^"TRUE" | ^"FALSE" }
+
+// Identifier (for variable references in future)
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// Path values (can be quoted or unquoted starting with /)
+path_value = { string_value | bare_path | identifier }
+bare_path = @{ "/" ~ (ASCII_ALPHANUMERIC | "/" | "_" | "-" | ".")* }
+
+// ============================================================================
+// Whitespace and Comments
+// ============================================================================
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ line_comment | block_comment }
+line_comment = _{ ("--" | "#" | "//") ~ (!"\n" ~ ANY)* }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

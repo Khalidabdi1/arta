@@ -1,0 +1,26 @@
+-- Example: Cleanup Script
+-- CAUTION: This script contains destructive actions
+-- Run with --allow-actions flag and --dry-run first!
+
+-- Define cleanup targets
+LET target_dir = /tmp;
+LET max_age_days = 7;
+LET max_size = 100MB;
+
+PRINT "=== Cleanup Script ===";
+PRINT "Target directory:", target_dir;
+
+-- Show files that would be cleaned
+PRINT "Files larger than 100MB:";
+SELECT FILES * FROM target_dir WHERE size > max_size;
+
+-- Show log files
+PRINT "Log files:";
+SELECT FILES * FROM target_dir WHERE extension = "log";
+
+-- Uncomment below to actually delete (requires --allow-actions)
+-- DELETE FILES FROM target_dir WHERE size > max_size;
+-- DELETE FILES FROM target_dir WHERE extension = "log";
+
+PRINT "=== Cleanup Preview Complete ===";
+PRINT "To execute, uncomment DELETE commands and use --allow-actions";

@@ -1,0 +1,44 @@
+-- Example: System Health Check
+-- This script queries various system metrics and reports on system health
+
+-- Set thresholds
+LET cpu_threshold = 80;
+LET memory_threshold = 80;
+LET disk_threshold = 90;
+
+-- Print header
+PRINT "=== System Health Check ===";
+
+-- Check CPU usage
+PRINT "CPU:", CPU usage;
+
+IF SELECT CPU usage > cpu_threshold THEN
+    PRINT "WARNING: High CPU usage detected!";
+    SELECT PROCESS * WHERE cpu > 10;
+END IF;
+
+-- Check Memory usage
+PRINT "Memory:", MEMORY usage;
+
+IF SELECT MEMORY usage > memory_threshold THEN
+    PRINT "WARNING: High memory usage detected!";
+    SELECT PROCESS * WHERE memory > 100MB;
+END IF;
+
+-- Check Disk usage
+PRINT "Disk:", DISK usage;
+
+IF SELECT DISK usage > disk_threshold THEN
+    PRINT "WARNING: Low disk space!";
+END IF;
+
+-- Check Battery (if available)
+PRINT "Battery:", BATTERY level, BATTERY state;
+
+-- Print system info
+PRINT "=== System Information ===";
+PRINT "Hostname:", SYSTEM hostname;
+PRINT "OS:", SYSTEM os;
+
+-- Done
+PRINT "=== Health Check Complete ===";

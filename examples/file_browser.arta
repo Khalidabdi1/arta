@@ -1,0 +1,21 @@
+-- Example: File Browser
+-- Browse files in a directory and show their details
+
+-- Set the directory to browse (can be overridden via --arg)
+LET target_dir = /tmp;
+
+PRINT "=== Browsing files in", target_dir, "===";
+
+-- List all files
+SELECT FILES * FROM target_dir;
+
+-- Show details for each file
+PRINT "=== File Details ===";
+
+FOR file IN SELECT FILES * FROM target_dir WHERE is_dir = false DO
+    PRINT "File:", file.name;
+    PRINT "  Size:", file.size;
+    PRINT "  Path:", file.path;
+END FOR;
+
+PRINT "=== Done ===";

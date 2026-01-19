@@ -1,0 +1,77 @@
+[package]
+name = "arta"
+version = "0.4.0"
+edition = "2021"
+authors = ["Arta contributors"]
+description = "A SQL-like DSL for querying and managing system state"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/arta"
+keywords = ["system", "query", "dsl", "cli", "sql"]
+categories = ["command-line-utilities", "os"]
+readme = "README.md"
+
+[dependencies]
+# Parser
+pest = "2.7"
+pest_derive = "2.7"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# System information
+sysinfo = "0.30"
+battery = "0.7"
+
+# Serialization and output
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Time formatting
+chrono = { version = "0.4", features = ["serde"] }
+
+# Human-readable sizes
+bytesize = "1.3"
+
+# Regex for pattern matching
+regex = "1"
+
+# Unix system calls
+libc = "0.2"
+
+# Signal handling for LIFE monitoring
+ctrlc = "3.4"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+
+[features]
+default = []
+repl = ["dep:rustyline", "dep:tokio"]
+
+[dependencies.rustyline]
+version = "14"
+optional = true
+
+[dependencies.tokio]
+version = "1"
+features = ["rt-multi-thread", "macros"]
+optional = true
+
+[[bin]]
+name = "arta"
+path = "src/main.rs"
+
+[lib]
+name = "arta"
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

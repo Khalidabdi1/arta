@@ -1,0 +1,34 @@
+-- container_basic.arta
+-- Basic container usage example
+-- Containers provide isolated execution environments
+
+-- Create a container with some initial context
+CREATE CONTAINER "sandbox" DO
+    -- Define variables in this container's scope
+    LET threshold = 50;
+    LET log_path = /var/log;
+    
+    -- Run queries in this isolated environment
+    PRINT "=== Sandbox Environment ===";
+    SELECT CPU cores, usage;
+    SELECT MEMORY total, used;
+END CONTAINER;
+
+-- Switch to the sandbox container
+SWITCH CONTAINER "sandbox";
+
+-- Now we're in the sandbox - these run with sandbox's context
+PRINT "Currently in sandbox container";
+SELECT SYSTEM *;
+
+-- List all available containers
+PRINT "=== Available Containers ===";
+LIST CONTAINERS;
+
+-- Switch back to default
+SWITCH CONTAINER "default";
+PRINT "Back in default container";
+
+-- Clean up
+DESTROY CONTAINER "sandbox";
+PRINT "Sandbox destroyed";
