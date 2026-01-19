@@ -1,38 +1,38 @@
 //! Interactive REPL implementation
 
-use crate::error::Result;
-use crate::{parse_command, ExecutionContext, OutputFormat, format_output, Context};
-use crate::engine::executor::execute_command_with_context;
 use crate::container::ContainerManager;
+use crate::engine::executor::execute_command_with_context;
+use crate::error::Result;
+use crate::{format_output, parse_command, ExecutionContext, OutputFormat};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
 pub fn run_repl() -> Result<()> {
-    let mut rl = DefaultEditor::new()
-        .map_err(|e| crate::error::ArtaError::ExecutionError(e.to_string()))?;
-    
+    let mut rl =
+        DefaultEditor::new().map_err(|e| crate::error::ArtaError::ExecutionError(e.to_string()))?;
+
     println!("Arta v{} - Interactive Mode", env!("CARGO_PKG_VERSION"));
     println!("Type 'help' for commands, 'exit' to quit\n");
-    
+
     let exec_ctx = ExecutionContext {
         dry_run: false,
         allow_actions: false,
         output_format: OutputFormat::Human,
         verbose: false,
     };
-    
+
     // Create container manager for multi-container support
     let mut container_manager = ContainerManager::new();
-    
+
     // Buffer for multi-line input (for control flow blocks)
     let mut input_buffer = String::new();
     let mut block_depth = 0;
-    
+
     loop {
         // Get current container and context
         let container = container_manager.active();
         let container_name = container_manager.active_name();
-        
+
         // Create prompt based on whether we're in a multi-line block
         let prompt = if block_depth > 0 {
             format!("{}...> ", "  ".repeat(block_depth))
@@ -43,14 +43,18 @@ pub fn run_repl() -> Result<()> {
             } else {
                 String::new()
             };
-            format!("arta {}[{}]> ", container_prefix, container.context().prompt())
+            format!(
+                "arta {}[{}]> ",
+                container_prefix,
+                container.context().prompt()
+            )
         };
-        
+
         let readline = rl.readline(&prompt);
         match readline {
             Ok(line) => {
                 let line = line.trim();
-                
+
                 // Handle empty lines
                 if line.is_empty() {
                     if block_depth == 0 {
@@ -60,7 +64,7 @@ pub fn run_repl() -> Result<()> {
                     input_buffer.push(' ');
                     continue;
                 }
-                
+
                 // If we're not in a block, check for built-in REPL commands
                 if block_depth == 0 {
                     match line.to_lowercase().as_str() {
@@ -85,9 +89,14 @@ pub fn run_repl() -> Result<()> {
                             println!("Containers:");
                             for name in container_manager.list() {
                                 let c = container_manager.get(name).unwrap();
-                                let active = if container_manager.active_name() == name { " (active)" } else { "" };
-                                println!("  {} - actions: {}, readonly: {}{}", 
-                                    name, 
+                                let active = if container_manager.active_name() == name {
+                                    " (active)"
+                                } else {
+                                    ""
+                                };
+                                println!(
+                                    "  {} - actions: {}, readonly: {}{}",
+                                    name,
                                     if c.allow_actions { "yes" } else { "no" },
                                     if c.readonly { "yes" } else { "no" },
                                     active
@@ -99,19 +108,19 @@ pub fn run_repl() -> Result<()> {
                         _ => {}
                     }
                 }
-                
+
                 let _ = rl.add_history_entry(line);
-                
+
                 // Handle shortcuts (only when not in a block)
                 let line_to_process = if block_depth == 0 {
                     expand_shortcuts(line)
                 } else {
                     line.to_string()
                 };
-                
+
                 // Update block depth based on keywords
                 let upper = line_to_process.to_uppercase();
-                
+
                 // Count opening keywords (DO, THEN)
                 if upper.contains(" DO") || upper.contains(" DO ") || upper.ends_with(" DO") {
                     block_depth += 1;
@@ -119,7 +128,7 @@ pub fn run_repl() -> Result<()> {
                 if upper.contains(" THEN") || upper.contains(" THEN ") || upper.ends_with(" THEN") {
                     block_depth += 1;
                 }
-                
+
                 // Count closing keywords (END FOR, END IF, END CONTAINER, END LIFE)
                 if upper.contains("END FOR") {
                     block_depth = block_depth.saturating_sub(1);
@@ -133,17 +142,17 @@ pub fn run_repl() -> Result<()> {
                 if upper.contains("END LIFE") {
                     block_depth = block_depth.saturating_sub(1);
                 }
-                
+
                 // Add to buffer
                 if !input_buffer.is_empty() {
                     input_buffer.push(' ');
                 }
                 input_buffer.push_str(&line_to_process);
-                
+
                 // If block is complete, execute
                 if block_depth == 0 && !input_buffer.is_empty() {
                     let command_str = std::mem::take(&mut input_buffer);
-                    
+
                     match parse_command(&command_str) {
                         Ok(cmd) => {
                             // Handle container-specific commands
@@ -151,17 +160,25 @@ pub fn run_repl() -> Result<()> {
                                 match container_cmd {
                                     crate::parser::ContainerCommand::Switch(name) => {
                                         match container_manager.switch(name) {
-                                            Ok(()) => println!("Switched to container '{}'\n", name),
+                                            Ok(()) => {
+                                                println!("Switched to container '{}'\n", name)
+                                            }
                                             Err(e) => eprintln!("Error: {}\n", e),
                                         }
                                         continue;
                                     }
                                     crate::parser::ContainerCommand::Create(create) => {
-                                        match container_manager.create(&create.name, create.options.clone()) {
+                                        match container_manager
+                                            .create(&create.name, create.options.clone())
+                                        {
                                             Ok(container) => {
                                                 // Execute initialization body in the new container
                                                 for body_cmd in &create.body {
-                                                    if let Err(e) = execute_command_with_context(body_cmd, &exec_ctx, container.context_mut()) {
+                                                    if let Err(e) = execute_command_with_context(
+                                                        body_cmd,
+                                                        &exec_ctx,
+                                                        container.context_mut(),
+                                                    ) {
                                                         eprintln!("Error in container initialization: {}\n", e);
                                                     }
                                                 }
@@ -182,9 +199,15 @@ pub fn run_repl() -> Result<()> {
                                         println!("Containers:");
                                         for name in container_manager.list() {
                                             let c = container_manager.get(name).unwrap();
-                                            let active = if container_manager.active_name() == name { " (active)" } else { "" };
-                                            println!("  {} - actions: {}, readonly: {}{}", 
-                                                name, 
+                                            let active = if container_manager.active_name() == name
+                                            {
+                                                " (active)"
+                                            } else {
+                                                ""
+                                            };
+                                            println!(
+                                                "  {} - actions: {}, readonly: {}{}",
+                                                name,
                                                 if c.allow_actions { "yes" } else { "no" },
                                                 if c.readonly { "yes" } else { "no" },
                                                 active
@@ -196,17 +219,24 @@ pub fn run_repl() -> Result<()> {
                                     crate::parser::ContainerCommand::Export(export) => {
                                         let path = std::path::Path::new(&export.path);
                                         match container_manager.export(&export.name, path) {
-                                            Ok(()) => println!("Container '{}' exported to '{}'\n", export.name, export.path),
+                                            Ok(()) => println!(
+                                                "Container '{}' exported to '{}'\n",
+                                                export.name, export.path
+                                            ),
                                             Err(e) => eprintln!("Error: {}\n", e),
                                         }
                                         continue;
                                     }
                                 }
                             }
-                            
+
                             // Execute regular commands in active container's context
                             let container = container_manager.active_mut();
-                            match execute_command_with_context(&cmd, &exec_ctx, container.context_mut()) {
+                            match execute_command_with_context(
+                                &cmd,
+                                &exec_ctx,
+                                container.context_mut(),
+                            ) {
                                 Ok(result) => {
                                     let output = format_output(&result, &exec_ctx.output_format);
                                     if !output.is_empty() {
@@ -245,14 +275,14 @@ pub fn run_repl() -> Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }
 
 /// Expand common shortcuts to full commands
 fn expand_shortcuts(input: &str) -> String {
     let lower = input.to_lowercase();
-    
+
     // Common shortcuts
     if lower.starts_with("cd ") {
         return format!("ENTER FOLDER {}", &input[3..]);
@@ -279,12 +309,13 @@ fn expand_shortcuts(input: &str) -> String {
     if lower == "ctx" || lower == "context" {
         return "SHOW CONTEXT".to_string();
     }
-    
+
     input.to_string()
 }
 
 fn print_help() {
-    println!(r#"
+    println!(
+        r#"
 Arta Commands
 =============
 
@@ -368,5 +399,6 @@ REPL Commands:
 
 Note: FOR, IF, CONTAINER, and LIFE blocks can be entered across multiple lines.
       The REPL will wait for the corresponding END keyword before executing.
-"#);
+"#
+    );
 }

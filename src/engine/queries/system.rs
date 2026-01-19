@@ -2,7 +2,7 @@
 
 use crate::error::Result;
 use crate::parser::FieldList;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +27,7 @@ pub fn query_system(_fields: &FieldList) -> Result<SystemInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_system_query() {
         let info = query_system(&FieldList::All).unwrap();

@@ -19,7 +19,8 @@ pub fn format_json(result: &ExecutionResult) -> String {
         ResultData::Explanation(s) => json!({ "explanation": s }),
         ResultData::Message(s) => json!({ "message": s }),
         ResultData::Multiple(results) => {
-            let items: Vec<Value> = results.iter()
+            let items: Vec<Value> = results
+                .iter()
                 .map(|r| serde_json::from_str(&format_json(r)).unwrap_or(json!(null)))
                 .collect();
             json!({ "results": items })
@@ -27,6 +28,6 @@ pub fn format_json(result: &ExecutionResult) -> String {
         ResultData::Empty => json!({ "empty": true }),
         ResultData::ContainerResult(info) => serde_json::to_value(info).unwrap_or(json!(null)),
     };
-    
+
     serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string())
 }

@@ -6,7 +6,7 @@ pub mod process;
 pub use files::delete_files;
 pub use process::kill_processes;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionResult {

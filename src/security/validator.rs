@@ -1,7 +1,7 @@
 //! Command validation
 
-use crate::parser::Command;
 use crate::error::Result;
+use crate::parser::Command;
 
 /// Validate a command before execution
 pub fn validate_command(_cmd: &Command) -> Result<()> {

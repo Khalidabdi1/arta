@@ -5,8 +5,8 @@
 //! - LIFE monitoring loops
 //! - Configurable permissions (allow_actions, readonly)
 
-mod container;
 mod manager;
+mod types;
 
-pub use container::Container;
 pub use manager::ContainerManager;
+pub use types::Container;

@@ -1,18 +1,18 @@
 //! Process kill action
 
-use crate::error::{ArtaError, Result};
-use crate::parser::{WhereClause, CompareOp, Value};
 use crate::engine::actions::ActionResult;
-use sysinfo::{System, Signal, Pid};
+use crate::error::{ArtaError, Result};
+use crate::parser::{CompareOp, Value, WhereClause};
+use sysinfo::{Pid, Signal, System};
 
 const MAX_PROCESSES_PER_OPERATION: usize = 10;
 
 pub fn kill_processes(where_clause: &WhereClause, dry_run: bool) -> Result<ActionResult> {
     let mut sys = System::new_all();
     sys.refresh_all();
-    
+
     let mut matched_processes: Vec<ProcessMatch> = Vec::new();
-    
+
     for (pid, process) in sys.processes() {
         let proc_info = ProcessMatch {
             pid: pid.as_u32(),
@@ -20,7 +20,7 @@ pub fn kill_processes(where_clause: &WhereClause, dry_run: bool) -> Result<Actio
             cpu: process.cpu_usage(),
             memory: process.memory(),
         };
-        
+
         if matches_process_where_clause(&proc_info, where_clause) {
             // Don't allow killing system-critical processes
             if is_protected_process(&proc_info.name) {
@@ -29,7 +29,7 @@ pub fn kill_processes(where_clause: &WhereClause, dry_run: bool) -> Result<Actio
             matched_processes.push(proc_info);
         }
     }
-    
+
     // Safety limit
     if matched_processes.len() > MAX_PROCESSES_PER_OPERATION {
         return Err(ArtaError::SecurityError(format!(
@@ -38,10 +38,10 @@ pub fn kill_processes(where_clause: &WhereClause, dry_run: bool) -> Result<Actio
             MAX_PROCESSES_PER_OPERATION
         )));
     }
-    
+
     let mut details = Vec::new();
     let mut killed_count = 0;
-    
+
     for proc in &matched_processes {
         if dry_run {
             details.push(format!("Would kill: {} (PID {})", proc.name, proc.pid));
@@ -49,7 +49,7 @@ pub fn kill_processes(where_clause: &WhereClause, dry_run: bool) -> Result<Actio
             // Re-get the process from a fresh system snapshot
             let mut fresh_sys = System::new_all();
             fresh_sys.refresh_all();
-            
+
             if let Some(process) = fresh_sys.process(Pid::from_u32(proc.pid)) {
                 if process.kill_with(Signal::Term).unwrap_or(false) {
                     details.push(format!("Killed: {} (PID {})", proc.name, proc.pid));
@@ -58,18 +58,25 @@ pub fn kill_processes(where_clause: &WhereClause, dry_run: bool) -> Result<Actio
                     details.push(format!("Failed to kill: {} (PID {})", proc.name, proc.pid));
                 }
             } else {
-                details.push(format!("Process no longer exists: {} (PID {})", proc.name, proc.pid));
+                details.push(format!(
+                    "Process no longer exists: {} (PID {})",
+                    proc.name, proc.pid
+                ));
             }
         }
     }
-    
+
     if matched_processes.is_empty() {
         details.push("No matching processes found".to_string());
     }
-    
+
     Ok(ActionResult {
         action_type: "KILL PROCESS".to_string(),
-        affected_count: if dry_run { matched_processes.len() } else { killed_count },
+        affected_count: if dry_run {
+            matched_processes.len()
+        } else {
+            killed_count
+        },
         dry_run,
         details,
     })
@@ -85,10 +92,19 @@ struct ProcessMatch {
 
 fn is_protected_process(name: &str) -> bool {
     let protected = [
-        "init", "systemd", "kernel", "launchd", "WindowServer",
-        "loginwindow", "kernel_task", "syslogd", "notifyd"
+        "init",
+        "systemd",
+        "kernel",
+        "launchd",
+        "WindowServer",
+        "loginwindow",
+        "kernel_task",
+        "syslogd",
+        "notifyd",
     ];
-    protected.iter().any(|p| name.to_lowercase().contains(&p.to_lowercase()))
+    protected
+        .iter()
+        .any(|p| name.to_lowercase().contains(&p.to_lowercase()))
 }
 
 fn matches_process_where_clause(proc: &ProcessMatch, where_clause: &WhereClause) -> bool {
@@ -102,7 +118,7 @@ fn matches_process_where_clause(proc: &ProcessMatch, where_clause: &WhereClause)
 
 fn matches_process_condition(proc: &ProcessMatch, condition: &crate::parser::Condition) -> bool {
     let field = condition.field.to_lowercase();
-    
+
     match field.as_str() {
         "pid" => {
             if let Value::Number(n) = &condition.value {
@@ -167,7 +183,7 @@ fn compare_strings(left: &str, right: &str, op: &CompareOp) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_scan_processes_with_filter() {
         // Create a WHERE clause that likely won't match anything
@@ -181,12 +197,12 @@ mod tests {
                 next: None,
             }],
         };
-        
+
         let result = kill_processes(&where_clause, true).unwrap();
         assert!(result.dry_run);
         assert_eq!(result.affected_count, 0);
     }
-    
+
     #[test]
     fn test_kill_dry_run_no_matches() {
         let where_clause = WhereClause {
@@ -199,11 +215,11 @@ mod tests {
                 next: None,
             }],
         };
-        
+
         let result = kill_processes(&where_clause, true).unwrap();
         assert_eq!(result.affected_count, 0);
     }
-    
+
     #[test]
     fn test_protected_processes() {
         assert!(is_protected_process("systemd"));

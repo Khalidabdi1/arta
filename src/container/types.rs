@@ -3,9 +3,9 @@
 //! A Container represents an isolated execution environment with its own
 //! context, variables, and configuration.
 
-use chrono::{DateTime, Utc};
 use crate::context::Context;
 use crate::parser::ContainerOptions;
+use chrono::{DateTime, Utc};
 
 /// A sandboxed execution container
 #[derive(Debug)]
@@ -33,27 +33,27 @@ impl Container {
             created_at: Utc::now(),
         }
     }
-    
+
     /// Create a new container with default options
     pub fn new_default(name: String) -> Self {
         Self::new(name, ContainerOptions::default())
     }
-    
+
     /// Get the container's context
     pub fn context(&self) -> &Context {
         &self.context
     }
-    
+
     /// Get a mutable reference to the container's context
     pub fn context_mut(&mut self) -> &mut Context {
         &mut self.context
     }
-    
+
     /// Check if actions are allowed in this container
     pub fn actions_allowed(&self) -> bool {
         self.allow_actions
     }
-    
+
     /// Check if the container is read-only
     pub fn is_readonly(&self) -> bool {
         self.readonly
@@ -75,7 +75,7 @@ impl Clone for Container {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_container_new() {
         let container = Container::new_default("test".to_string());
@@ -83,7 +83,7 @@ mod tests {
         assert!(!container.allow_actions);
         assert!(!container.readonly);
     }
-    
+
     #[test]
     fn test_container_with_options() {
         let options = ContainerOptions {
@@ -94,7 +94,7 @@ mod tests {
         assert!(container.allow_actions);
         assert!(container.readonly);
     }
-    
+
     #[test]
     fn test_container_context() {
         let mut container = Container::new_default("test".to_string());

@@ -1,7 +1,7 @@
 //! Security module for Arta
 
-pub mod validator;
 pub mod permissions;
+pub mod validator;
 
-pub use validator::validate_command;
 pub use permissions::check_permissions;
+pub use validator::validate_command;

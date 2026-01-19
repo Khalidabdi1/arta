@@ -14,24 +14,24 @@
 //! println!("{}", format_output(&result, &OutputFormat::Human));
 //! ```
 
-pub mod parser;
-pub mod engine;
-pub mod security;
-pub mod output;
-pub mod error;
 pub mod cli;
-pub mod context;
-pub mod script;
-pub mod life;
 pub mod container;
+pub mod context;
+pub mod engine;
+pub mod error;
+pub mod life;
+pub mod output;
+pub mod parser;
+pub mod script;
+pub mod security;
 
 #[cfg(feature = "repl")]
 pub mod repl;
 
-pub use parser::{parse_command, parse_script, Command, Script};
+pub use container::{Container, ContainerManager};
+pub use context::Context;
 pub use engine::{execute_command, execute_command_with_context, ExecutionContext};
 pub use error::{ArtaError, Result};
-pub use output::{OutputFormat, format_output};
-pub use context::Context;
-pub use script::{ScriptRunner, ScriptResult, validate_script};
-pub use container::{Container, ContainerManager};
+pub use output::{format_output, OutputFormat};
+pub use parser::{parse_command, parse_script, Command, Script};
+pub use script::{validate_script, ScriptResult, ScriptRunner};

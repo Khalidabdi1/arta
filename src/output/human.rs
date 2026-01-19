@@ -13,10 +13,7 @@ pub fn format_human(result: &ExecutionResult) -> String {
                  Usage:     {:.1}%\n\
                  Brand:     {}\n\
                  Frequency: {} MHz",
-                info.cores,
-                info.usage,
-                info.brand,
-                info.frequency
+                info.cores, info.usage, info.brand, info.frequency
             )
         }
         ResultData::Memory(info) => {
@@ -107,7 +104,10 @@ pub fn format_human(result: &ExecutionResult) -> String {
                 return "No matching processes found".to_string();
             }
             let mut output = String::from("Processes\n---------\n");
-            output.push_str(&format!("{:<8} {:<20} {:>8} {:>12}\n", "PID", "NAME", "CPU%", "MEMORY"));
+            output.push_str(&format!(
+                "{:<8} {:<20} {:>8} {:>12}\n",
+                "PID", "NAME", "CPU%", "MEMORY"
+            ));
             output.push_str(&"-".repeat(52));
             output.push('\n');
             for proc in processes.iter().take(20) {
@@ -120,7 +120,10 @@ pub fn format_human(result: &ExecutionResult) -> String {
                 ));
             }
             if processes.len() > 20 {
-                output.push_str(&format!("\n... and {} more processes\n", processes.len() - 20));
+                output.push_str(&format!(
+                    "\n... and {} more processes\n",
+                    processes.len() - 20
+                ));
             }
             output
         }
@@ -129,7 +132,10 @@ pub fn format_human(result: &ExecutionResult) -> String {
                 return "No files found".to_string();
             }
             let mut output = String::from("Files\n-----\n");
-            output.push_str(&format!("{:<30} {:>12} {:<20}\n", "NAME", "SIZE", "MODIFIED"));
+            output.push_str(&format!(
+                "{:<30} {:>12} {:<20}\n",
+                "NAME", "SIZE", "MODIFIED"
+            ));
             output.push_str(&"-".repeat(64));
             output.push('\n');
             for file in files.iter().take(50) {
@@ -141,7 +147,11 @@ pub fn format_human(result: &ExecutionResult) -> String {
                 output.push_str(&format!(
                     "{:<30} {:>12} {:<20}\n",
                     truncate(&name, 30),
-                    if file.is_dir { "-".to_string() } else { ByteSize(file.size).to_string() },
+                    if file.is_dir {
+                        "-".to_string()
+                    } else {
+                        ByteSize(file.size).to_string()
+                    },
                     file.modified.as_deref().unwrap_or("-")
                 ));
             }
@@ -163,7 +173,10 @@ pub fn format_human(result: &ExecutionResult) -> String {
                 output.push('\n');
             }
             if content.lines.len() < content.total_lines {
-                output.push_str(&format!("\n... {} more lines\n", content.total_lines - content.lines.len()));
+                output.push_str(&format!(
+                    "\n... {} more lines\n",
+                    content.total_lines - content.lines.len()
+                ));
             }
             output
         }
@@ -184,7 +197,7 @@ pub fn format_human(result: &ExecutionResult) -> String {
         }
         ResultData::ContextInfo(info) => {
             let mut output = String::new();
-            
+
             if !info.current_folder.is_empty() {
                 output.push_str("Current Context\n");
                 output.push_str("---------------\n");
@@ -194,7 +207,7 @@ pub fn format_human(result: &ExecutionResult) -> String {
                 }
                 output.push_str(&format!("Depth:  {}\n", info.folder_depth));
             }
-            
+
             if !info.variables.is_empty() {
                 if !output.is_empty() {
                     output.push('\n');
@@ -205,7 +218,7 @@ pub fn format_human(result: &ExecutionResult) -> String {
                     output.push_str(&format!("  {} = {}\n", name, value));
                 }
             }
-            
+
             if !info.history.is_empty() {
                 if !output.is_empty() {
                     output.push('\n');
@@ -216,19 +229,15 @@ pub fn format_human(result: &ExecutionResult) -> String {
                     output.push_str(&format!("  {}\n", entry));
                 }
             }
-            
+
             if output.is_empty() {
                 output = "No context information".to_string();
             }
-            
+
             output
         }
-        ResultData::Explanation(explanation) => {
-            explanation.clone()
-        }
-        ResultData::Message(msg) => {
-            msg.clone()
-        }
+        ResultData::Explanation(explanation) => explanation.clone(),
+        ResultData::Message(msg) => msg.clone(),
         ResultData::Multiple(results) => {
             let mut output = String::new();
             for (i, res) in results.iter().enumerate() {
@@ -239,23 +248,24 @@ pub fn format_human(result: &ExecutionResult) -> String {
             }
             output
         }
-        ResultData::Empty => {
-            "".to_string()
-        }
+        ResultData::Empty => "".to_string(),
         ResultData::ContainerResult(info) => {
             let mut output = format!("Container: {}\n", info.operation);
             output.push_str(&"-".repeat(info.operation.len() + 11));
             output.push('\n');
-            
+
             if let Some(ref name) = info.container_name {
                 output.push_str(&format!("Name: {}\n", name));
             }
-            
+
             output.push_str(&format!("{}\n", info.message));
-            
+
             if let Some(ref containers) = info.containers {
                 output.push('\n');
-                output.push_str(&format!("{:<20} {:>12} {:>12} {:>8}\n", "NAME", "ALLOW_ACTIONS", "READONLY", "ACTIVE"));
+                output.push_str(&format!(
+                    "{:<20} {:>12} {:>12} {:>8}\n",
+                    "NAME", "ALLOW_ACTIONS", "READONLY", "ACTIVE"
+                ));
                 output.push_str(&"-".repeat(56));
                 output.push('\n');
                 for container in containers {
@@ -268,7 +278,7 @@ pub fn format_human(result: &ExecutionResult) -> String {
                     ));
                 }
             }
-            
+
             output
         }
     }

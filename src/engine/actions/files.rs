@@ -1,55 +1,62 @@
 //! File deletion action
 
-use crate::error::{ArtaError, Result};
-use crate::parser::{WhereClause, CompareOp, Value};
 use crate::engine::actions::ActionResult;
+use crate::error::{ArtaError, Result};
+use crate::parser::{CompareOp, Value, WhereClause};
 use std::fs;
 use std::path::Path;
 
 const MAX_FILES_PER_OPERATION: usize = 100;
 
-pub fn delete_files(path: &str, where_clause: Option<&WhereClause>, dry_run: bool) -> Result<ActionResult> {
+pub fn delete_files(
+    path: &str,
+    where_clause: Option<&WhereClause>,
+    dry_run: bool,
+) -> Result<ActionResult> {
     let base_path = Path::new(path);
-    
+
     if !base_path.exists() {
         return Err(ArtaError::PathNotFound(path.to_string()));
     }
-    
+
     if !base_path.is_dir() {
-        return Err(ArtaError::ExecutionError(format!("{} is not a directory", path)));
+        return Err(ArtaError::ExecutionError(format!(
+            "{} is not a directory",
+            path
+        )));
     }
-    
+
     // Security check: require WHERE clause
     if where_clause.is_none() {
         return Err(ArtaError::SecurityError(
-            "DELETE without WHERE clause is too dangerous. Add a WHERE clause to filter files.".to_string()
+            "DELETE without WHERE clause is too dangerous. Add a WHERE clause to filter files."
+                .to_string(),
         ));
     }
-    
+
     let mut matched_files: Vec<FileInfo> = Vec::new();
-    
+
     // Scan directory (non-recursive for safety)
-    for entry in fs::read_dir(base_path)
-        .map_err(|e| ArtaError::IoError(e))?
-    {
-        let entry = entry.map_err(|e| ArtaError::IoError(e))?;
+    for entry in fs::read_dir(base_path).map_err(ArtaError::IoError)? {
+        let entry = entry.map_err(ArtaError::IoError)?;
         let file_path = entry.path();
-        
+
         if file_path.is_file() {
-            let metadata = fs::metadata(&file_path)
-                .map_err(|e| ArtaError::IoError(e))?;
-            
+            let metadata = fs::metadata(&file_path).map_err(ArtaError::IoError)?;
+
             let file_info = FileInfo {
                 path: file_path.to_string_lossy().to_string(),
-                name: file_path.file_name()
+                name: file_path
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default(),
                 size: metadata.len(),
-                extension: file_path.extension()
+                extension: file_path
+                    .extension()
                     .map(|e| e.to_string_lossy().to_string())
                     .unwrap_or_default(),
             };
-            
+
             if let Some(wc) = where_clause {
                 if matches_file_where_clause(&file_info, wc) {
                     matched_files.push(file_info);
@@ -57,7 +64,7 @@ pub fn delete_files(path: &str, where_clause: Option<&WhereClause>, dry_run: boo
             }
         }
     }
-    
+
     // Safety limit
     if matched_files.len() > MAX_FILES_PER_OPERATION {
         return Err(ArtaError::SecurityError(format!(
@@ -66,10 +73,10 @@ pub fn delete_files(path: &str, where_clause: Option<&WhereClause>, dry_run: boo
             MAX_FILES_PER_OPERATION
         )));
     }
-    
+
     let mut details = Vec::new();
     let mut deleted_count = 0;
-    
+
     for file in &matched_files {
         if dry_run {
             details.push(format!("Would delete: {} ({} bytes)", file.path, file.size));
@@ -85,10 +92,14 @@ pub fn delete_files(path: &str, where_clause: Option<&WhereClause>, dry_run: boo
             }
         }
     }
-    
+
     Ok(ActionResult {
         action_type: "DELETE FILES".to_string(),
-        affected_count: if dry_run { matched_files.len() } else { deleted_count },
+        affected_count: if dry_run {
+            matched_files.len()
+        } else {
+            deleted_count
+        },
         dry_run,
         details,
     })
@@ -113,7 +124,7 @@ fn matches_file_where_clause(file: &FileInfo, where_clause: &WhereClause) -> boo
 
 fn matches_file_condition(file: &FileInfo, condition: &crate::parser::Condition) -> bool {
     let field = condition.field.to_lowercase();
-    
+
     match field.as_str() {
         "size" => {
             let target = match &condition.value {
@@ -171,18 +182,18 @@ fn compare_strings(left: &str, right: &str, op: &CompareOp) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
-    
+    use tempfile::TempDir;
+
     #[test]
     fn test_delete_files_dry_run() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
-        
+
         let mut file = File::create(&file_path).unwrap();
         writeln!(file, "test content").unwrap();
-        
+
         // Create WHERE clause for size > 0
         let where_clause = WhereClause {
             conditions: vec![crate::parser::ConditionExpr {
@@ -194,30 +205,31 @@ mod tests {
                 next: None,
             }],
         };
-        
+
         let result = delete_files(
             temp_dir.path().to_str().unwrap(),
             Some(&where_clause),
-            true  // dry_run
-        ).unwrap();
-        
+            true, // dry_run
+        )
+        .unwrap();
+
         assert!(result.dry_run);
         assert_eq!(result.affected_count, 1);
-        
+
         // File should still exist
         assert!(file_path.exists());
     }
-    
+
     #[test]
     fn test_delete_requires_where_clause() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         let result = delete_files(
             temp_dir.path().to_str().unwrap(),
-            None,  // No WHERE clause
-            false
+            None, // No WHERE clause
+            false,
         );
-        
+
         assert!(result.is_err());
     }
 }

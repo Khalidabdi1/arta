@@ -2,7 +2,7 @@
 
 use crate::error::Result;
 use crate::parser::FieldList;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sysinfo::Disks;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,8 +23,9 @@ pub struct DiskEntry {
 
 pub fn query_disk(_fields: &FieldList, from_path: Option<&str>) -> Result<DiskInfo> {
     let disks = Disks::new_with_refreshed_list();
-    
-    let entries: Vec<DiskEntry> = disks.iter()
+
+    let entries: Vec<DiskEntry> = disks
+        .iter()
         .filter(|disk| {
             if let Some(path) = from_path {
                 disk.mount_point().to_string_lossy().starts_with(path)
@@ -41,7 +42,7 @@ pub fn query_disk(_fields: &FieldList, from_path: Option<&str>) -> Result<DiskIn
             } else {
                 0.0
             };
-            
+
             DiskEntry {
                 name: disk.name().to_string_lossy().to_string(),
                 mount_point: disk.mount_point().to_string_lossy().to_string(),
@@ -53,14 +54,14 @@ pub fn query_disk(_fields: &FieldList, from_path: Option<&str>) -> Result<DiskIn
             }
         })
         .collect();
-    
+
     Ok(DiskInfo { disks: entries })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_disk_query() {
         let info = query_disk(&FieldList::All, None).unwrap();

@@ -1,14 +1,14 @@
 //! Script runner for executing .arta files
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
-use crate::error::{ArtaError, Result};
-use crate::parser::{parse_script, Script, Command};
-use crate::engine::{execute_command_with_context, ExecutionContext, ExecutionResult, ResultData};
 use crate::context::{Context, VariableValue};
+use crate::engine::{execute_command_with_context, ExecutionContext, ExecutionResult, ResultData};
+use crate::error::{ArtaError, Result};
 use crate::output::{format_output, OutputFormat};
+use crate::parser::{parse_script, Command, Script};
 
 /// Result of script execution
 #[derive(Debug)]
@@ -42,7 +42,7 @@ impl ScriptRunner {
             script_args: HashMap::new(),
         }
     }
-    
+
     /// Set script arguments
     pub fn with_args(mut self, args: Vec<String>) -> Self {
         for arg in args {
@@ -52,40 +52,40 @@ impl ScriptRunner {
         }
         self
     }
-    
+
     /// Load and run a script file
     pub fn run_file(&mut self, path: &Path) -> Result<ScriptResult> {
         // Validate file extension
-        if path.extension().map_or(true, |e| e != "arta") {
-            return Err(ArtaError::ExecutionError(
-                format!("Script file must have .arta extension: {}", path.display())
-            ));
+        if path.extension().is_none_or(|e| e != "arta") {
+            return Err(ArtaError::ExecutionError(format!(
+                "Script file must have .arta extension: {}",
+                path.display()
+            )));
         }
-        
+
         // Read script content
-        let content = fs::read_to_string(path)
-            .map_err(|e| ArtaError::IoError(e))?;
-        
+        let content = fs::read_to_string(path).map_err(ArtaError::IoError)?;
+
         // Parse the script
         let script = parse_script(&content)?;
-        
+
         // Inject script arguments as variables
         self.inject_script_args();
-        
+
         // Execute the script
         self.run_script(&script)
     }
-    
+
     /// Run a parsed script
     pub fn run_script(&mut self, script: &Script) -> Result<ScriptResult> {
         let mut results = Vec::new();
         let mut statements_executed = 0;
-        
+
         for cmd in &script.statements {
             match execute_command_with_context(cmd, &self.exec_ctx, &mut self.context) {
                 Ok(result) => {
                     statements_executed += 1;
-                    
+
                     // Print output for non-empty results
                     match &result.data {
                         ResultData::Empty => {}
@@ -96,7 +96,7 @@ impl ScriptRunner {
                             println!("{}", format_output(&result, &self.exec_ctx.output_format));
                         }
                     }
-                    
+
                     results.push(result);
                 }
                 Err(e) => {
@@ -109,7 +109,7 @@ impl ScriptRunner {
                 }
             }
         }
-        
+
         Ok(ScriptResult {
             results,
             statements_executed,
@@ -117,7 +117,7 @@ impl ScriptRunner {
             error: None,
         })
     }
-    
+
     /// Inject script arguments as context variables
     fn inject_script_args(&mut self) {
         for (key, value) in &self.script_args {
@@ -133,11 +133,11 @@ impl ScriptRunner {
             } else {
                 VariableValue::String(value.clone())
             };
-            
+
             self.context.set_variable(key.clone(), var_value);
         }
     }
-    
+
     /// Get the output format
     pub fn output_format(&self) -> &OutputFormat {
         &self.exec_ctx.output_format
@@ -147,11 +147,11 @@ impl ScriptRunner {
 /// Explain a script without executing
 pub fn explain_script(script: &Script) -> Vec<String> {
     let mut explanations = Vec::new();
-    
+
     for (i, cmd) in script.statements.iter().enumerate() {
         explanations.push(format!("{}. {}", i + 1, explain_command(cmd)));
     }
-    
+
     explanations
 }
 
@@ -165,35 +165,45 @@ fn explain_command(cmd: &Command) -> String {
                     crate::parser::FieldList::All => "*".to_string(),
                     crate::parser::FieldList::Fields(f) => f.join(", "),
                 },
-                q.from_path.as_ref().map(|p| format!("FROM {} ", p)).unwrap_or_default(),
-                q.where_clause.as_ref().map(|_| "with filtering").unwrap_or("")
+                q.from_path
+                    .as_ref()
+                    .map(|p| format!("FROM {} ", p))
+                    .unwrap_or_default(),
+                q.where_clause
+                    .as_ref()
+                    .map(|_| "with filtering")
+                    .unwrap_or("")
             )
         }
-        Command::Action(a) => {
-            match a {
-                crate::parser::ActionCommand::DeleteFiles(d) => {
-                    format!("DELETE FILES FROM {} {}", d.path, 
-                        d.where_clause.as_ref().map(|_| "with filtering").unwrap_or(""))
-                }
-                crate::parser::ActionCommand::KillProcess(_) => {
-                    "KILL PROCESS with filtering".to_string()
-                }
+        Command::Action(a) => match a {
+            crate::parser::ActionCommand::DeleteFiles(d) => {
+                format!(
+                    "DELETE FILES FROM {} {}",
+                    d.path,
+                    d.where_clause
+                        .as_ref()
+                        .map(|_| "with filtering")
+                        .unwrap_or("")
+                )
             }
-        }
-        Command::Context(c) => {
-            match c {
-                crate::parser::ContextCommand::EnterFolder(p) => format!("ENTER FOLDER {}", p),
-                crate::parser::ContextCommand::EnterFile(p) => format!("ENTER FILE {}", p),
-                crate::parser::ContextCommand::Exit => "EXIT".to_string(),
-                crate::parser::ContextCommand::Reset => "RESET".to_string(),
-                crate::parser::ContextCommand::Show(t) => format!("SHOW {}", t),
+            crate::parser::ActionCommand::KillProcess(_) => {
+                "KILL PROCESS with filtering".to_string()
             }
-        }
+        },
+        Command::Context(c) => match c {
+            crate::parser::ContextCommand::EnterFolder(p) => format!("ENTER FOLDER {}", p),
+            crate::parser::ContextCommand::EnterFile(p) => format!("ENTER FILE {}", p),
+            crate::parser::ContextCommand::Exit => "EXIT".to_string(),
+            crate::parser::ContextCommand::Reset => "RESET".to_string(),
+            crate::parser::ContextCommand::Show(t) => format!("SHOW {}", t),
+        },
         Command::Let(l) => format!("LET {} = {:?}", l.name, l.value),
         Command::For(f) => {
             format!(
                 "FOR {} IN {} ({} statements)",
-                f.iterator_var, f.source_query.target, f.body.len()
+                f.iterator_var,
+                f.source_query.target,
+                f.body.len()
             )
         }
         Command::If(i) => {
@@ -213,17 +223,25 @@ fn explain_command(cmd: &Command) -> String {
         Command::Print(p) => {
             format!("PRINT ({} expressions)", p.expressions.len())
         }
-        Command::Container(c) => {
-            match c {
-                crate::parser::ContainerCommand::Create(create) => {
-                    format!("CREATE CONTAINER \"{}\" ({} statements)", create.name, create.body.len())
-                }
-                crate::parser::ContainerCommand::Switch(name) => format!("SWITCH CONTAINER \"{}\"", name),
-                crate::parser::ContainerCommand::List => "LIST CONTAINERS".to_string(),
-                crate::parser::ContainerCommand::Destroy(name) => format!("DESTROY CONTAINER \"{}\"", name),
-                crate::parser::ContainerCommand::Export(e) => format!("EXPORT CONTAINER \"{}\" TO \"{}\"", e.name, e.path),
+        Command::Container(c) => match c {
+            crate::parser::ContainerCommand::Create(create) => {
+                format!(
+                    "CREATE CONTAINER \"{}\" ({} statements)",
+                    create.name,
+                    create.body.len()
+                )
             }
-        }
+            crate::parser::ContainerCommand::Switch(name) => {
+                format!("SWITCH CONTAINER \"{}\"", name)
+            }
+            crate::parser::ContainerCommand::List => "LIST CONTAINERS".to_string(),
+            crate::parser::ContainerCommand::Destroy(name) => {
+                format!("DESTROY CONTAINER \"{}\"", name)
+            }
+            crate::parser::ContainerCommand::Export(e) => {
+                format!("EXPORT CONTAINER \"{}\" TO \"{}\"", e.name, e.path)
+            }
+        },
         Command::Explain(inner) => format!("EXPLAIN {}", explain_command(inner)),
     }
 }
@@ -231,24 +249,21 @@ fn explain_command(cmd: &Command) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_script_runner_new() {
         let runner = ScriptRunner::new(ExecutionContext::default());
         assert!(runner.script_args.is_empty());
     }
-    
+
     #[test]
     fn test_script_runner_with_args() {
         let runner = ScriptRunner::new(ExecutionContext::default())
-            .with_args(vec![
-                "path=/tmp".to_string(),
-                "threshold=80".to_string(),
-            ]);
+            .with_args(vec!["path=/tmp".to_string(), "threshold=80".to_string()]);
         assert_eq!(runner.script_args.get("path"), Some(&"/tmp".to_string()));
         assert_eq!(runner.script_args.get("threshold"), Some(&"80".to_string()));
     }
-    
+
     #[test]
     fn test_explain_script() {
         let script = parse_script("SELECT CPU *; SELECT MEMORY *").unwrap();

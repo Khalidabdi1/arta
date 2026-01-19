@@ -1,6 +1,6 @@
 //! Abstract Syntax Tree definitions for Arta DSL
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Top-level command
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -290,9 +290,9 @@ impl std::fmt::Display for CompareOp {
 pub enum Value {
     String(String),
     Number(f64),
-    Size(u64),  // Size in bytes
+    Size(u64), // Size in bytes
     Boolean(bool),
-    Identifier(String),  // For variable references
+    Identifier(String), // For variable references
 }
 
 impl std::fmt::Display for Value {

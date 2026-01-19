@@ -1,11 +1,15 @@
 //! Command executor
 
-use crate::error::{ArtaError, Result};
-use crate::parser::{Command, QueryCommand, ActionCommand, ContextCommand, ShowTarget, QueryTarget, LetStatement, LetValue, ForLoop, IfStatement, IfCondition, CompareOp, Value, LifeMonitor, PrintCommand, PrintExpr, ContainerCommand};
-use crate::output::OutputFormat;
-use crate::engine::queries::*;
-use crate::engine::actions::*;
 use crate::context::Context;
+use crate::engine::actions::*;
+use crate::engine::queries::*;
+use crate::error::{ArtaError, Result};
+use crate::output::OutputFormat;
+use crate::parser::{
+    ActionCommand, Command, CompareOp, ContainerCommand, ContextCommand, ForLoop, IfCondition,
+    IfStatement, LetStatement, LetValue, LifeMonitor, PrintCommand, PrintExpr, QueryCommand,
+    QueryTarget, ShowTarget, Value,
+};
 
 /// Execution context containing runtime configuration
 #[derive(Debug, Clone)]
@@ -113,9 +117,9 @@ pub fn execute_command(cmd: &Command, ctx: &ExecutionContext) -> Result<Executio
 
 /// Execute a parsed command with a stateful context
 pub fn execute_command_with_context(
-    cmd: &Command, 
+    cmd: &Command,
     ctx: &ExecutionContext,
-    context: &mut Context
+    context: &mut Context,
 ) -> Result<ExecutionResult> {
     match cmd {
         Command::Query(query) => execute_query(query, ctx, context),
@@ -131,17 +135,27 @@ pub fn execute_command_with_context(
     }
 }
 
-fn execute_query(query: &QueryCommand, _ctx: &ExecutionContext, context: &Context) -> Result<ExecutionResult> {
+fn execute_query(
+    query: &QueryCommand,
+    _ctx: &ExecutionContext,
+    context: &Context,
+) -> Result<ExecutionResult> {
     let data = match query.target {
         QueryTarget::Cpu => ResultData::Cpu(query_cpu(&query.fields)?),
         QueryTarget::Memory => ResultData::Memory(query_memory(&query.fields)?),
-        QueryTarget::Disk => ResultData::Disk(query_disk(&query.fields, query.from_path.as_deref())?),
+        QueryTarget::Disk => {
+            ResultData::Disk(query_disk(&query.fields, query.from_path.as_deref())?)
+        }
         QueryTarget::Network => ResultData::Network(query_network(&query.fields)?),
         QueryTarget::System => ResultData::System(query_system(&query.fields)?),
         QueryTarget::Battery => ResultData::Battery(query_battery(&query.fields)?),
-        QueryTarget::Process => ResultData::Processes(query_processes(&query.fields, query.where_clause.as_ref())?),
+        QueryTarget::Process => {
+            ResultData::Processes(query_processes(&query.fields, query.where_clause.as_ref())?)
+        }
         QueryTarget::Files => {
-            let path = query.from_path.as_deref()
+            let path = query
+                .from_path
+                .as_deref()
                 .map(|p| {
                     let resolved = resolve_variable_in_string(p, context);
                     context.resolve_path(&resolved)
@@ -158,32 +172,42 @@ fn execute_query(query: &QueryCommand, _ctx: &ExecutionContext, context: &Contex
                 file.to_path_buf()
             } else {
                 return Err(ArtaError::ExecutionError(
-                    "No file in context. Use 'ENTER FILE <path>' or 'SELECT CONTENT * FROM <path>'".to_string()
+                    "No file in context. Use 'ENTER FILE <path>' or 'SELECT CONTENT * FROM <path>'"
+                        .to_string(),
                 ));
             };
             ResultData::Content(query_content(&file_path, query.where_clause.as_ref())?)
         }
     };
-    
-    Ok(ExecutionResult { data, message: None })
+
+    Ok(ExecutionResult {
+        data,
+        message: None,
+    })
 }
 
-fn execute_action(action: &ActionCommand, ctx: &ExecutionContext, context: &Context) -> Result<ExecutionResult> {
+fn execute_action(
+    action: &ActionCommand,
+    ctx: &ExecutionContext,
+    context: &Context,
+) -> Result<ExecutionResult> {
     if !ctx.allow_actions && !ctx.dry_run {
         return Err(ArtaError::ActionsDisabled);
     }
-    
+
     let result = match action {
         ActionCommand::DeleteFiles(cmd) => {
             let resolved_path = resolve_variable_in_string(&cmd.path, context);
             let path = context.resolve_path(&resolved_path)?;
-            delete_files(path.to_str().unwrap_or(&cmd.path), cmd.where_clause.as_ref(), ctx.dry_run)?
+            delete_files(
+                path.to_str().unwrap_or(&cmd.path),
+                cmd.where_clause.as_ref(),
+                ctx.dry_run,
+            )?
         }
-        ActionCommand::KillProcess(cmd) => {
-            kill_processes(&cmd.where_clause, ctx.dry_run)?
-        }
+        ActionCommand::KillProcess(cmd) => kill_processes(&cmd.where_clause, ctx.dry_run)?,
     };
-    
+
     Ok(ExecutionResult {
         data: ResultData::ActionResult(result),
         message: None,
@@ -196,7 +220,10 @@ fn execute_context_command(cmd: &ContextCommand, context: &mut Context) -> Resul
             let resolved_path = resolve_variable_in_string(path, context);
             context.enter_folder(&resolved_path)?;
             Ok(ExecutionResult {
-                data: ResultData::Message(format!("Entered folder: {}", context.current_folder().display())),
+                data: ResultData::Message(format!(
+                    "Entered folder: {}",
+                    context.current_folder().display()
+                )),
                 message: None,
             })
         }
@@ -204,14 +231,20 @@ fn execute_context_command(cmd: &ContextCommand, context: &mut Context) -> Resul
             let resolved_path = resolve_variable_in_string(path, context);
             context.enter_file(&resolved_path)?;
             Ok(ExecutionResult {
-                data: ResultData::Message(format!("Entered file: {}", context.current_file().unwrap().display())),
+                data: ResultData::Message(format!(
+                    "Entered file: {}",
+                    context.current_file().unwrap().display()
+                )),
                 message: None,
             })
         }
         ContextCommand::Exit => {
             context.exit_context()?;
             Ok(ExecutionResult {
-                data: ResultData::Message(format!("Exited to: {}", context.current_folder().display())),
+                data: ResultData::Message(format!(
+                    "Exited to: {}",
+                    context.current_folder().display()
+                )),
                 message: None,
             })
         }
@@ -224,46 +257,46 @@ fn execute_context_command(cmd: &ContextCommand, context: &mut Context) -> Resul
         }
         ContextCommand::Show(target) => {
             let info = match target {
-                ShowTarget::Context => {
-                    ContextInfo {
-                        current_folder: context.current_folder().display().to_string(),
-                        current_file: context.current_file().map(|p| p.display().to_string()),
-                        folder_depth: context.folder_depth(),
-                        variables: context.variables()
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.to_string()))
-                            .collect(),
-                        history: Vec::new(),
-                    }
-                }
-                ShowTarget::Variables => {
-                    ContextInfo {
-                        current_folder: String::new(),
-                        current_file: None,
-                        folder_depth: 0,
-                        variables: context.variables()
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.to_string()))
-                            .collect(),
-                        history: Vec::new(),
-                    }
-                }
-                ShowTarget::History => {
-                    ContextInfo {
-                        current_folder: String::new(),
-                        current_file: None,
-                        folder_depth: 0,
-                        variables: Vec::new(),
-                        history: context.history()
-                            .iter()
-                            .map(|h| format!("{}: {} {:?}", 
+                ShowTarget::Context => ContextInfo {
+                    current_folder: context.current_folder().display().to_string(),
+                    current_file: context.current_file().map(|p| p.display().to_string()),
+                    folder_depth: context.folder_depth(),
+                    variables: context
+                        .variables()
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.to_string()))
+                        .collect(),
+                    history: Vec::new(),
+                },
+                ShowTarget::Variables => ContextInfo {
+                    current_folder: String::new(),
+                    current_file: None,
+                    folder_depth: 0,
+                    variables: context
+                        .variables()
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.to_string()))
+                        .collect(),
+                    history: Vec::new(),
+                },
+                ShowTarget::History => ContextInfo {
+                    current_folder: String::new(),
+                    current_file: None,
+                    folder_depth: 0,
+                    variables: Vec::new(),
+                    history: context
+                        .history()
+                        .iter()
+                        .map(|h| {
+                            format!(
+                                "{}: {} {:?}",
                                 h.timestamp.format("%H:%M:%S"),
                                 h.action,
                                 h.path.as_ref().map(|p| p.display().to_string())
-                            ))
-                            .collect(),
-                    }
-                }
+                            )
+                        })
+                        .collect(),
+                },
             };
             Ok(ExecutionResult {
                 data: ResultData::ContextInfo(info),
@@ -275,7 +308,7 @@ fn execute_context_command(cmd: &ContextCommand, context: &mut Context) -> Resul
 
 fn execute_let(let_stmt: &LetStatement, context: &mut Context) -> Result<ExecutionResult> {
     use crate::context::VariableValue;
-    
+
     let value = match &let_stmt.value {
         LetValue::String(s) => VariableValue::String(s.clone()),
         LetValue::Number(n) => VariableValue::Number(*n),
@@ -283,24 +316,31 @@ fn execute_let(let_stmt: &LetStatement, context: &mut Context) -> Result<Executi
         LetValue::Boolean(b) => VariableValue::Boolean(*b),
         LetValue::Path(p) => VariableValue::Path(std::path::PathBuf::from(p)),
     };
-    
+
     let display_value = value.to_string();
     context.set_variable(let_stmt.name.clone(), value);
-    
+
     Ok(ExecutionResult {
-        data: ResultData::Message(format!("Variable '{}' set to {}", let_stmt.name, display_value)),
+        data: ResultData::Message(format!(
+            "Variable '{}' set to {}",
+            let_stmt.name, display_value
+        )),
         message: None,
     })
 }
 
-fn execute_for_loop(for_loop: &ForLoop, ctx: &ExecutionContext, context: &mut Context) -> Result<ExecutionResult> {
+fn execute_for_loop(
+    for_loop: &ForLoop,
+    ctx: &ExecutionContext,
+    context: &mut Context,
+) -> Result<ExecutionResult> {
     use crate::context::VariableValue;
-    
+
     // Execute the source query to get items to iterate over
     let source_result = execute_query(&for_loop.source_query, ctx, context)?;
-    
+
     let mut results = Vec::new();
-    
+
     // Determine what we're iterating over based on the query result
     match source_result.data {
         ResultData::Files(files) => {
@@ -309,33 +349,33 @@ fn execute_for_loop(for_loop: &ForLoop, ctx: &ExecutionContext, context: &mut Co
                 // Create a struct-like variable with fields: name, path, size, extension
                 context.set_variable(
                     for_loop.iterator_var.clone(),
-                    VariableValue::Path(std::path::PathBuf::from(&file.path))
+                    VariableValue::Path(std::path::PathBuf::from(&file.path)),
                 );
-                
+
                 // Also set field accessors like file.name, file.size, etc.
                 context.set_variable(
                     format!("{}.name", for_loop.iterator_var),
-                    VariableValue::String(file.name.clone())
+                    VariableValue::String(file.name.clone()),
                 );
                 context.set_variable(
                     format!("{}.path", for_loop.iterator_var),
-                    VariableValue::Path(std::path::PathBuf::from(&file.path))
+                    VariableValue::Path(std::path::PathBuf::from(&file.path)),
                 );
                 context.set_variable(
                     format!("{}.size", for_loop.iterator_var),
-                    VariableValue::Size(file.size)
+                    VariableValue::Size(file.size),
                 );
                 if let Some(ext) = &file.extension {
                     context.set_variable(
                         format!("{}.extension", for_loop.iterator_var),
-                        VariableValue::String(ext.clone())
+                        VariableValue::String(ext.clone()),
                     );
                 }
                 context.set_variable(
                     format!("{}.is_dir", for_loop.iterator_var),
-                    VariableValue::Boolean(file.is_dir)
+                    VariableValue::Boolean(file.is_dir),
                 );
-                
+
                 // Execute each command in the body
                 for cmd in &for_loop.body {
                     let result = execute_command_with_context(cmd, ctx, context)?;
@@ -348,27 +388,27 @@ fn execute_for_loop(for_loop: &ForLoop, ctx: &ExecutionContext, context: &mut Co
                 // Bind the iterator variable to the current process
                 context.set_variable(
                     for_loop.iterator_var.clone(),
-                    VariableValue::String(proc.name.clone())
+                    VariableValue::String(proc.name.clone()),
                 );
-                
+
                 // Set field accessors
                 context.set_variable(
                     format!("{}.name", for_loop.iterator_var),
-                    VariableValue::String(proc.name.clone())
+                    VariableValue::String(proc.name.clone()),
                 );
                 context.set_variable(
                     format!("{}.pid", for_loop.iterator_var),
-                    VariableValue::Number(proc.pid as f64)
+                    VariableValue::Number(proc.pid as f64),
                 );
                 context.set_variable(
                     format!("{}.cpu", for_loop.iterator_var),
-                    VariableValue::Number(proc.cpu as f64)
+                    VariableValue::Number(proc.cpu as f64),
                 );
                 context.set_variable(
                     format!("{}.memory", for_loop.iterator_var),
-                    VariableValue::Size(proc.memory)
+                    VariableValue::Size(proc.memory),
                 );
-                
+
                 // Execute each command in the body
                 for cmd in &for_loop.body {
                     let result = execute_command_with_context(cmd, ctx, context)?;
@@ -378,14 +418,14 @@ fn execute_for_loop(for_loop: &ForLoop, ctx: &ExecutionContext, context: &mut Co
         }
         _ => {
             return Err(ArtaError::ExecutionError(
-                "FOR loop source must be a FILES or PROCESS query".to_string()
+                "FOR loop source must be a FILES or PROCESS query".to_string(),
             ));
         }
     }
-    
+
     // Clean up iterator variables (optional, but good practice)
     // Note: We don't have a remove_variable method, so they persist until context reset
-    
+
     if results.is_empty() {
         Ok(ExecutionResult {
             data: ResultData::Message("FOR loop completed (no items)".to_string()),
@@ -394,15 +434,19 @@ fn execute_for_loop(for_loop: &ForLoop, ctx: &ExecutionContext, context: &mut Co
     } else {
         Ok(ExecutionResult {
             data: ResultData::Multiple(results),
-            message: Some(format!("FOR loop completed")),
+            message: Some("FOR loop completed".to_string()),
         })
     }
 }
 
-fn execute_if(if_stmt: &IfStatement, ctx: &ExecutionContext, context: &mut Context) -> Result<ExecutionResult> {
+fn execute_if(
+    if_stmt: &IfStatement,
+    ctx: &ExecutionContext,
+    context: &mut Context,
+) -> Result<ExecutionResult> {
     // Evaluate the condition
     let condition_met = evaluate_if_condition(&if_stmt.condition, context)?;
-    
+
     if condition_met {
         // Execute THEN body
         let mut results = Vec::new();
@@ -410,7 +454,7 @@ fn execute_if(if_stmt: &IfStatement, ctx: &ExecutionContext, context: &mut Conte
             let result = execute_command_with_context(cmd, ctx, context)?;
             results.push(result);
         }
-        
+
         if results.len() == 1 {
             Ok(results.into_iter().next().unwrap())
         } else {
@@ -426,7 +470,7 @@ fn execute_if(if_stmt: &IfStatement, ctx: &ExecutionContext, context: &mut Conte
             let result = execute_command_with_context(cmd, ctx, context)?;
             results.push(result);
         }
-        
+
         if results.len() == 1 {
             Ok(results.into_iter().next().unwrap())
         } else {
@@ -447,7 +491,7 @@ fn execute_if(if_stmt: &IfStatement, ctx: &ExecutionContext, context: &mut Conte
 fn evaluate_if_condition(condition: &IfCondition, context: &Context) -> Result<bool> {
     // Execute a query to get the current value
     // For now, we'll get the system info and compare the field
-    
+
     match condition.target {
         QueryTarget::Memory => {
             let info = query_memory(&crate::parser::FieldList::All)?;
@@ -469,11 +513,10 @@ fn evaluate_if_condition(condition: &IfCondition, context: &Context) -> Result<b
             let field_value = get_battery_field_value(&info, &condition.field)?;
             compare_values(field_value, &condition.operator, &condition.value, context)
         }
-        _ => {
-            Err(ArtaError::ExecutionError(
-                format!("IF condition not supported for {} queries yet", condition.target)
-            ))
-        }
+        _ => Err(ArtaError::ExecutionError(format!(
+            "IF condition not supported for {} queries yet",
+            condition.target
+        ))),
     }
 }
 
@@ -484,7 +527,10 @@ fn get_memory_field_value(info: &MemoryInfo, field: &str) -> Result<f64> {
         "free" | "free_bytes" => Ok(info.free as f64),
         "available" | "available_bytes" => Ok(info.available as f64),
         "used_percent" | "percent" | "usage" | "usage_percent" => Ok(info.usage_percent),
-        _ => Err(ArtaError::ExecutionError(format!("Unknown MEMORY field: {}", field))),
+        _ => Err(ArtaError::ExecutionError(format!(
+            "Unknown MEMORY field: {}",
+            field
+        ))),
     }
 }
 
@@ -493,7 +539,10 @@ fn get_cpu_field_value(info: &CpuInfo, field: &str) -> Result<f64> {
         "usage" | "percent" | "used_percent" | "usage_percent" => Ok(info.usage as f64),
         "cores" | "core_count" => Ok(info.cores as f64),
         "frequency" | "frequency_mhz" => Ok(info.frequency as f64),
-        _ => Err(ArtaError::ExecutionError(format!("Unknown CPU field: {}", field))),
+        _ => Err(ArtaError::ExecutionError(format!(
+            "Unknown CPU field: {}",
+            field
+        ))),
     }
 }
 
@@ -505,7 +554,10 @@ fn get_disk_field_value(info: &DiskInfo, field: &str) -> Result<f64> {
             "used" | "used_bytes" => Ok(disk.used as f64),
             "free" | "free_bytes" | "available" | "available_bytes" => Ok(disk.free as f64),
             "used_percent" | "percent" | "usage" => Ok(disk.usage_percent),
-            _ => Err(ArtaError::ExecutionError(format!("Unknown DISK field: {}", field))),
+            _ => Err(ArtaError::ExecutionError(format!(
+                "Unknown DISK field: {}",
+                field
+            ))),
         }
     } else {
         Err(ArtaError::ExecutionError("No disks found".to_string()))
@@ -515,8 +567,13 @@ fn get_disk_field_value(info: &DiskInfo, field: &str) -> Result<f64> {
 fn get_battery_field_value(info: &BatteryInfo, field: &str) -> Result<f64> {
     if let Some(battery) = info.batteries.first() {
         match field.to_lowercase().as_str() {
-            "percent" | "charge" | "level" | "charge_percent" | "percentage" => Ok(battery.percentage as f64),
-            _ => Err(ArtaError::ExecutionError(format!("Unknown BATTERY field: {}", field))),
+            "percent" | "charge" | "level" | "charge_percent" | "percentage" => {
+                Ok(battery.percentage as f64)
+            }
+            _ => Err(ArtaError::ExecutionError(format!(
+                "Unknown BATTERY field: {}",
+                field
+            ))),
         }
     } else {
         // No battery, return 100 (assume desktop/always powered)
@@ -524,7 +581,12 @@ fn get_battery_field_value(info: &BatteryInfo, field: &str) -> Result<f64> {
     }
 }
 
-fn compare_values(actual: f64, operator: &CompareOp, expected: &Value, context: &Context) -> Result<bool> {
+fn compare_values(
+    actual: f64,
+    operator: &CompareOp,
+    expected: &Value,
+    context: &Context,
+) -> Result<bool> {
     let expected_num = match expected {
         Value::Number(n) => *n,
         Value::Size(s) => *s as f64,
@@ -534,19 +596,27 @@ fn compare_values(actual: f64, operator: &CompareOp, expected: &Value, context: 
                 match var_value {
                     crate::context::VariableValue::Number(n) => *n,
                     crate::context::VariableValue::Size(s) => *s as f64,
-                    _ => return Err(ArtaError::ExecutionError(
-                        format!("Variable '{}' is not a number", id)
-                    )),
+                    _ => {
+                        return Err(ArtaError::ExecutionError(format!(
+                            "Variable '{}' is not a number",
+                            id
+                        )))
+                    }
                 }
             } else {
-                return Err(ArtaError::ExecutionError(format!("Unknown variable: {}", id)));
+                return Err(ArtaError::ExecutionError(format!(
+                    "Unknown variable: {}",
+                    id
+                )));
             }
         }
-        _ => return Err(ArtaError::ExecutionError(
-            "IF condition value must be a number or size".to_string()
-        )),
+        _ => {
+            return Err(ArtaError::ExecutionError(
+                "IF condition value must be a number or size".to_string(),
+            ))
+        }
     };
-    
+
     Ok(match operator {
         CompareOp::GreaterThan => actual > expected_num,
         CompareOp::GreaterThanOrEqual => actual >= expected_num,
@@ -554,9 +624,11 @@ fn compare_values(actual: f64, operator: &CompareOp, expected: &Value, context: 
         CompareOp::LessThanOrEqual => actual <= expected_num,
         CompareOp::Equal => (actual - expected_num).abs() < 0.001,
         CompareOp::NotEqual => (actual - expected_num).abs() >= 0.001,
-        _ => return Err(ArtaError::ExecutionError(
-            "IF condition only supports numeric comparisons".to_string()
-        )),
+        _ => {
+            return Err(ArtaError::ExecutionError(
+                "IF condition only supports numeric comparisons".to_string(),
+            ))
+        }
     })
 }
 
@@ -570,16 +642,20 @@ fn resolve_variable_in_string(input: &str, context: &Context) -> String {
             other => other.to_string(),
         };
     }
-    
+
     // Otherwise return as-is (we can add ${var} syntax later)
     input.to_string()
 }
 
-fn execute_life(life: &LifeMonitor, ctx: &ExecutionContext, context: &mut Context) -> Result<ExecutionResult> {
+fn execute_life(
+    life: &LifeMonitor,
+    ctx: &ExecutionContext,
+    context: &mut Context,
+) -> Result<ExecutionResult> {
     // For LIFE monitoring in script context, we run synchronously
     // The actual continuous monitoring is handled by the life module
     crate::life::run_life_block(life.target, &life.body, ctx, context, 1)?;
-    
+
     Ok(ExecutionResult {
         data: ResultData::Message("LIFE monitoring completed".to_string()),
         message: None,
@@ -588,7 +664,7 @@ fn execute_life(life: &LifeMonitor, ctx: &ExecutionContext, context: &mut Contex
 
 fn execute_print(print_cmd: &PrintCommand, context: &Context) -> Result<ExecutionResult> {
     let mut output_parts = Vec::new();
-    
+
     for expr in &print_cmd.expressions {
         let value = match expr {
             PrintExpr::String(s) => s.clone(),
@@ -606,9 +682,9 @@ fn execute_print(print_cmd: &PrintCommand, context: &Context) -> Result<Executio
         };
         output_parts.push(value);
     }
-    
+
     let output = output_parts.join(" ");
-    
+
     Ok(ExecutionResult {
         data: ResultData::Message(output),
         message: None,
@@ -629,51 +705,48 @@ fn execute_container_cmd(
                 let result = execute_command_with_context(body_cmd, ctx, context)?;
                 results.push(result);
             }
-            
+
             Ok(ExecutionResult {
                 data: ResultData::ContainerResult(ContainerResultInfo {
                     operation: "CREATE".to_string(),
                     container_name: Some(create.name.clone()),
                     containers: None,
-                    message: format!("Container '{}' created with {} initialization commands", 
-                        create.name, create.body.len()),
+                    message: format!(
+                        "Container '{}' created with {} initialization commands",
+                        create.name,
+                        create.body.len()
+                    ),
                 }),
                 message: None,
             })
         }
-        ContainerCommand::Switch(name) => {
-            Ok(ExecutionResult {
-                data: ResultData::ContainerResult(ContainerResultInfo {
-                    operation: "SWITCH".to_string(),
-                    container_name: Some(name.clone()),
-                    containers: None,
-                    message: format!("Switched to container '{}'", name),
-                }),
-                message: None,
-            })
-        }
-        ContainerCommand::List => {
-            Ok(ExecutionResult {
-                data: ResultData::ContainerResult(ContainerResultInfo {
-                    operation: "LIST".to_string(),
-                    container_name: None,
-                    containers: Some(vec![
-                        ContainerInfo {
-                            name: "default".to_string(),
-                            allow_actions: ctx.allow_actions,
-                            readonly: false,
-                            is_active: true,
-                        }
-                    ]),
-                    message: "Container list".to_string(),
-                }),
-                message: None,
-            })
-        }
+        ContainerCommand::Switch(name) => Ok(ExecutionResult {
+            data: ResultData::ContainerResult(ContainerResultInfo {
+                operation: "SWITCH".to_string(),
+                container_name: Some(name.clone()),
+                containers: None,
+                message: format!("Switched to container '{}'", name),
+            }),
+            message: None,
+        }),
+        ContainerCommand::List => Ok(ExecutionResult {
+            data: ResultData::ContainerResult(ContainerResultInfo {
+                operation: "LIST".to_string(),
+                container_name: None,
+                containers: Some(vec![ContainerInfo {
+                    name: "default".to_string(),
+                    allow_actions: ctx.allow_actions,
+                    readonly: false,
+                    is_active: true,
+                }]),
+                message: "Container list".to_string(),
+            }),
+            message: None,
+        }),
         ContainerCommand::Destroy(name) => {
             if name == "default" {
                 return Err(ArtaError::ExecutionError(
-                    "Cannot destroy the default container".to_string()
+                    "Cannot destroy the default container".to_string(),
                 ));
             }
             Ok(ExecutionResult {
@@ -686,17 +759,15 @@ fn execute_container_cmd(
                 message: None,
             })
         }
-        ContainerCommand::Export(export) => {
-            Ok(ExecutionResult {
-                data: ResultData::ContainerResult(ContainerResultInfo {
-                    operation: "EXPORT".to_string(),
-                    container_name: Some(export.name.clone()),
-                    containers: None,
-                    message: format!("Container '{}' exported to '{}'", export.name, export.path),
-                }),
-                message: None,
-            })
-        }
+        ContainerCommand::Export(export) => Ok(ExecutionResult {
+            data: ResultData::ContainerResult(ContainerResultInfo {
+                operation: "EXPORT".to_string(),
+                container_name: Some(export.name.clone()),
+                containers: None,
+                message: format!("Container '{}' exported to '{}'", export.name, export.path),
+            }),
+            message: None,
+        }),
     }
 }
 
@@ -706,11 +777,22 @@ fn get_query_field_value(target: QueryTarget, field: &str) -> Result<String> {
             let info = query_battery(&crate::parser::FieldList::All)?;
             if let Some(battery) = info.batteries.first() {
                 match field.to_lowercase().as_str() {
-                    "level" | "percent" | "percentage" | "charge" => Ok(format!("{}%", battery.percentage as u32)),
+                    "level" | "percent" | "percentage" | "charge" => {
+                        Ok(format!("{}%", battery.percentage as u32))
+                    }
                     "state" | "status" => Ok(battery.state.clone()),
-                    "time_to_empty" | "remaining" => Ok(battery.time_to_empty.clone().unwrap_or_else(|| "N/A".to_string())),
-                    "time_to_full" => Ok(battery.time_to_full.clone().unwrap_or_else(|| "N/A".to_string())),
-                    _ => Err(ArtaError::ExecutionError(format!("Unknown BATTERY field: {}", field))),
+                    "time_to_empty" | "remaining" => Ok(battery
+                        .time_to_empty
+                        .clone()
+                        .unwrap_or_else(|| "N/A".to_string())),
+                    "time_to_full" => Ok(battery
+                        .time_to_full
+                        .clone()
+                        .unwrap_or_else(|| "N/A".to_string())),
+                    _ => Err(ArtaError::ExecutionError(format!(
+                        "Unknown BATTERY field: {}",
+                        field
+                    ))),
                 }
             } else {
                 Ok("No battery".to_string())
@@ -724,7 +806,10 @@ fn get_query_field_value(target: QueryTarget, field: &str) -> Result<String> {
                 "free" => Ok(bytesize::ByteSize(info.free).to_string()),
                 "available" => Ok(bytesize::ByteSize(info.available).to_string()),
                 "usage" | "percent" | "used_percent" => Ok(format!("{:.1}%", info.usage_percent)),
-                _ => Err(ArtaError::ExecutionError(format!("Unknown MEMORY field: {}", field))),
+                _ => Err(ArtaError::ExecutionError(format!(
+                    "Unknown MEMORY field: {}",
+                    field
+                ))),
             }
         }
         QueryTarget::Cpu => {
@@ -734,7 +819,10 @@ fn get_query_field_value(target: QueryTarget, field: &str) -> Result<String> {
                 "cores" => Ok(info.cores.to_string()),
                 "frequency" | "frequency_mhz" => Ok(format!("{} MHz", info.frequency)),
                 "name" | "brand" => Ok(info.brand.clone()),
-                _ => Err(ArtaError::ExecutionError(format!("Unknown CPU field: {}", field))),
+                _ => Err(ArtaError::ExecutionError(format!(
+                    "Unknown CPU field: {}",
+                    field
+                ))),
             }
         }
         QueryTarget::Disk => {
@@ -744,9 +832,14 @@ fn get_query_field_value(target: QueryTarget, field: &str) -> Result<String> {
                     "total" => Ok(bytesize::ByteSize(disk.total).to_string()),
                     "used" => Ok(bytesize::ByteSize(disk.used).to_string()),
                     "free" | "available" => Ok(bytesize::ByteSize(disk.free).to_string()),
-                    "usage" | "percent" | "used_percent" => Ok(format!("{:.1}%", disk.usage_percent)),
+                    "usage" | "percent" | "used_percent" => {
+                        Ok(format!("{:.1}%", disk.usage_percent))
+                    }
                     "name" | "mount" | "mount_point" => Ok(disk.mount_point.clone()),
-                    _ => Err(ArtaError::ExecutionError(format!("Unknown DISK field: {}", field))),
+                    _ => Err(ArtaError::ExecutionError(format!(
+                        "Unknown DISK field: {}",
+                        field
+                    ))),
                 }
             } else {
                 Ok("No disks".to_string())
@@ -760,7 +853,10 @@ fn get_query_field_value(target: QueryTarget, field: &str) -> Result<String> {
                 "os_version" | "version" => Ok(info.os_version.clone()),
                 "kernel" | "kernel_version" => Ok(info.kernel_version.clone()),
                 "uptime" | "uptime_secs" => Ok(format!("{} seconds", info.uptime)),
-                _ => Err(ArtaError::ExecutionError(format!("Unknown SYSTEM field: {}", field))),
+                _ => Err(ArtaError::ExecutionError(format!(
+                    "Unknown SYSTEM field: {}",
+                    field
+                ))),
             }
         }
         QueryTarget::Network => {
@@ -768,15 +864,25 @@ fn get_query_field_value(target: QueryTarget, field: &str) -> Result<String> {
             if let Some(iface) = info.interfaces.first() {
                 match field.to_lowercase().as_str() {
                     "name" => Ok(iface.name.clone()),
-                    "sent" | "bytes_sent" | "transmitted" => Ok(bytesize::ByteSize(iface.transmitted).to_string()),
-                    "recv" | "received" | "bytes_recv" => Ok(bytesize::ByteSize(iface.received).to_string()),
-                    _ => Err(ArtaError::ExecutionError(format!("Unknown NETWORK field: {}", field))),
+                    "sent" | "bytes_sent" | "transmitted" => {
+                        Ok(bytesize::ByteSize(iface.transmitted).to_string())
+                    }
+                    "recv" | "received" | "bytes_recv" => {
+                        Ok(bytesize::ByteSize(iface.received).to_string())
+                    }
+                    _ => Err(ArtaError::ExecutionError(format!(
+                        "Unknown NETWORK field: {}",
+                        field
+                    ))),
                 }
             } else {
                 Ok("No network interfaces".to_string())
             }
         }
-        _ => Err(ArtaError::ExecutionError(format!("PRINT not supported for {} queries", target))),
+        _ => Err(ArtaError::ExecutionError(format!(
+            "PRINT not supported for {} queries",
+            target
+        ))),
     }
 }
 
@@ -787,29 +893,36 @@ fn execute_explain(cmd: &Command, _ctx: &ExecutionContext) -> Result<ExecutionRe
                 "EXPLAIN: Would query {} with fields {:?}{}{}",
                 q.target,
                 q.fields,
-                q.from_path.as_ref().map(|p| format!(" from path '{}'", p)).unwrap_or_default(),
-                q.where_clause.as_ref().map(|_| " with filtering").unwrap_or_default()
+                q.from_path
+                    .as_ref()
+                    .map(|p| format!(" from path '{}'", p))
+                    .unwrap_or_default(),
+                q.where_clause
+                    .as_ref()
+                    .map(|_| " with filtering")
+                    .unwrap_or_default()
             )
         }
         Command::Action(ActionCommand::DeleteFiles(d)) => {
             format!(
                 "EXPLAIN: Would delete files from '{}' {}",
                 d.path,
-                d.where_clause.as_ref().map(|_| "with filtering").unwrap_or("(all files - DANGEROUS!)")
+                d.where_clause
+                    .as_ref()
+                    .map(|_| "with filtering")
+                    .unwrap_or("(all files - DANGEROUS!)")
             )
         }
         Command::Action(ActionCommand::KillProcess(_)) => {
             "EXPLAIN: Would kill processes matching filter criteria".to_string()
         }
-        Command::Context(c) => {
-            match c {
-                ContextCommand::EnterFolder(p) => format!("EXPLAIN: Would enter folder '{}'", p),
-                ContextCommand::EnterFile(p) => format!("EXPLAIN: Would enter file '{}'", p),
-                ContextCommand::Exit => "EXPLAIN: Would exit current context".to_string(),
-                ContextCommand::Reset => "EXPLAIN: Would reset context to initial state".to_string(),
-                ContextCommand::Show(t) => format!("EXPLAIN: Would show {}", t),
-            }
-        }
+        Command::Context(c) => match c {
+            ContextCommand::EnterFolder(p) => format!("EXPLAIN: Would enter folder '{}'", p),
+            ContextCommand::EnterFile(p) => format!("EXPLAIN: Would enter file '{}'", p),
+            ContextCommand::Exit => "EXPLAIN: Would exit current context".to_string(),
+            ContextCommand::Reset => "EXPLAIN: Would reset context to initial state".to_string(),
+            ContextCommand::Show(t) => format!("EXPLAIN: Would show {}", t),
+        },
         Command::Let(l) => {
             format!("EXPLAIN: Would set variable '{}' to {:?}", l.name, l.value)
         }
@@ -818,7 +931,11 @@ fn execute_explain(cmd: &Command, _ctx: &ExecutionContext) -> Result<ExecutionRe
                 "EXPLAIN: Would iterate '{}' over {} query{} and execute {} statement(s)",
                 f.iterator_var,
                 f.source_query.target,
-                f.source_query.where_clause.as_ref().map(|_| " with filtering").unwrap_or(""),
+                f.source_query
+                    .where_clause
+                    .as_ref()
+                    .map(|_| " with filtering")
+                    .unwrap_or(""),
                 f.body.len()
             )
         }
@@ -830,7 +947,10 @@ fn execute_explain(cmd: &Command, _ctx: &ExecutionContext) -> Result<ExecutionRe
                 i.condition.operator,
                 i.condition.value,
                 i.then_body.len(),
-                i.else_body.as_ref().map(|e| format!(" ELSE execute {} statement(s)", e.len())).unwrap_or_default()
+                i.else_body
+                    .as_ref()
+                    .map(|e| format!(" ELSE execute {} statement(s)", e.len()))
+                    .unwrap_or_default()
             )
         }
         Command::Life(l) => {
@@ -841,29 +961,35 @@ fn execute_explain(cmd: &Command, _ctx: &ExecutionContext) -> Result<ExecutionRe
             )
         }
         Command::Print(p) => {
-            format!(
-                "EXPLAIN: Would print {} expression(s)",
-                p.expressions.len()
-            )
+            format!("EXPLAIN: Would print {} expression(s)", p.expressions.len())
         }
         Command::Container(c) => {
             match c {
-                ContainerCommand::Create(create) => format!(
+                ContainerCommand::Create(create) => {
+                    format!(
                     "EXPLAIN: Would create container '{}' with {} initialization statement(s){}{}",
                     create.name,
                     create.body.len(),
                     if create.options.allow_actions { " [ALLOW ACTIONS]" } else { "" },
                     if create.options.readonly { " [READONLY]" } else { "" }
-                ),
-                ContainerCommand::Switch(name) => format!("EXPLAIN: Would switch to container '{}'", name),
+                )
+                }
+                ContainerCommand::Switch(name) => {
+                    format!("EXPLAIN: Would switch to container '{}'", name)
+                }
                 ContainerCommand::List => "EXPLAIN: Would list all containers".to_string(),
-                ContainerCommand::Destroy(name) => format!("EXPLAIN: Would destroy container '{}'", name),
-                ContainerCommand::Export(e) => format!("EXPLAIN: Would export container '{}' to '{}'", e.name, e.path),
+                ContainerCommand::Destroy(name) => {
+                    format!("EXPLAIN: Would destroy container '{}'", name)
+                }
+                ContainerCommand::Export(e) => format!(
+                    "EXPLAIN: Would export container '{}' to '{}'",
+                    e.name, e.path
+                ),
             }
         }
         Command::Explain(_) => "EXPLAIN: Nested EXPLAIN not supported".to_string(),
     };
-    
+
     Ok(ExecutionResult {
         data: ResultData::Explanation(explanation),
         message: None,
@@ -872,41 +998,47 @@ fn execute_explain(cmd: &Command, _ctx: &ExecutionContext) -> Result<ExecutionRe
 
 // Query helpers for new targets
 
-fn query_files(path: &std::path::Path, where_clause: Option<&crate::parser::WhereClause>) -> Result<Vec<FileEntry>> {
+fn query_files(
+    path: &std::path::Path,
+    where_clause: Option<&crate::parser::WhereClause>,
+) -> Result<Vec<FileEntry>> {
     use std::fs;
-    
+
     if !path.exists() {
         return Err(ArtaError::PathNotFound(path.display().to_string()));
     }
-    
+
     if !path.is_dir() {
-        return Err(ArtaError::ExecutionError(format!("'{}' is not a directory", path.display())));
+        return Err(ArtaError::ExecutionError(format!(
+            "'{}' is not a directory",
+            path.display()
+        )));
     }
-    
+
     let mut entries = Vec::new();
-    
-    for entry in fs::read_dir(path).map_err(|e| ArtaError::IoError(e))? {
-        let entry = entry.map_err(|e| ArtaError::IoError(e))?;
-        let metadata = entry.metadata().map_err(|e| ArtaError::IoError(e))?;
+
+    for entry in fs::read_dir(path).map_err(ArtaError::IoError)? {
+        let entry = entry.map_err(ArtaError::IoError)?;
+        let metadata = entry.metadata().map_err(ArtaError::IoError)?;
         let file_path = entry.path();
-        
-        let modified = metadata.modified()
-            .ok()
-            .map(|t| {
-                chrono::DateTime::<chrono::Utc>::from(t)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string()
-            });
-        
+
+        let modified = metadata.modified().ok().map(|t| {
+            chrono::DateTime::<chrono::Utc>::from(t)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        });
+
         let file_entry = FileEntry {
             name: entry.file_name().to_string_lossy().to_string(),
             path: file_path.display().to_string(),
             size: metadata.len(),
             is_dir: metadata.is_dir(),
             modified,
-            extension: file_path.extension().map(|e| e.to_string_lossy().to_string()),
+            extension: file_path
+                .extension()
+                .map(|e| e.to_string_lossy().to_string()),
         };
-        
+
         // Apply filtering if WHERE clause exists
         if let Some(wc) = where_clause {
             if matches_file_filter(&file_entry, wc) {
@@ -916,10 +1048,10 @@ fn query_files(path: &std::path::Path, where_clause: Option<&crate::parser::Wher
             entries.push(file_entry);
         }
     }
-    
+
     // Sort by name
     entries.sort_by(|a, b| a.name.cmp(&b.name));
-    
+
     Ok(entries)
 }
 
@@ -929,30 +1061,37 @@ fn matches_file_filter(_entry: &FileEntry, _where_clause: &crate::parser::WhereC
     true
 }
 
-fn query_content(path: &std::path::Path, where_clause: Option<&crate::parser::WhereClause>) -> Result<ContentInfo> {
+fn query_content(
+    path: &std::path::Path,
+    where_clause: Option<&crate::parser::WhereClause>,
+) -> Result<ContentInfo> {
     use std::fs;
     use std::io::{BufRead, BufReader};
-    
+
     if !path.exists() {
         return Err(ArtaError::PathNotFound(path.display().to_string()));
     }
-    
+
     if !path.is_file() {
-        return Err(ArtaError::ExecutionError(format!("'{}' is not a file", path.display())));
+        return Err(ArtaError::ExecutionError(format!(
+            "'{}' is not a file",
+            path.display()
+        )));
     }
-    
-    let metadata = fs::metadata(path).map_err(|e| ArtaError::IoError(e))?;
-    let file = fs::File::open(path).map_err(|e| ArtaError::IoError(e))?;
+
+    let metadata = fs::metadata(path).map_err(ArtaError::IoError)?;
+    let file = fs::File::open(path).map_err(ArtaError::IoError)?;
     let reader = BufReader::new(file);
-    
+
     let mut lines: Vec<String> = Vec::new();
     let mut total_lines = 0;
-    
+
     // Check for pattern filter in WHERE clause
     let pattern = where_clause.and_then(|wc| {
         wc.conditions.first().and_then(|c| {
-            if c.condition.field.to_lowercase() == "content" || 
-               c.condition.field.to_lowercase() == "line" {
+            if c.condition.field.to_lowercase() == "content"
+                || c.condition.field.to_lowercase() == "line"
+            {
                 match &c.condition.value {
                     crate::parser::Value::String(s) => Some(s.clone()),
                     _ => None,
@@ -962,11 +1101,11 @@ fn query_content(path: &std::path::Path, where_clause: Option<&crate::parser::Wh
             }
         })
     });
-    
+
     for (i, line_result) in reader.lines().enumerate() {
-        let line = line_result.map_err(|e| ArtaError::IoError(e))?;
+        let line = line_result.map_err(ArtaError::IoError)?;
         total_lines = i + 1;
-        
+
         if let Some(ref pat) = pattern {
             if line.contains(pat) {
                 lines.push(format!("{:>4}: {}", i + 1, line));
@@ -978,7 +1117,7 @@ fn query_content(path: &std::path::Path, where_clause: Option<&crate::parser::Wh
             }
         }
     }
-    
+
     Ok(ContentInfo {
         file_path: path.display().to_string(),
         lines,

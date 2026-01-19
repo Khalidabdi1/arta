@@ -2,7 +2,7 @@
 
 use crate::error::Result;
 use crate::parser::FieldList;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatteryInfo {
@@ -20,29 +20,33 @@ pub struct BatteryEntry {
 pub fn query_battery(_fields: &FieldList) -> Result<BatteryInfo> {
     let manager = battery::Manager::new()
         .map_err(|e| crate::error::ArtaError::ExecutionError(e.to_string()))?;
-    
-    let batteries: Vec<BatteryEntry> = manager.batteries()
+
+    let batteries: Vec<BatteryEntry> = manager
+        .batteries()
         .map_err(|e| crate::error::ArtaError::ExecutionError(e.to_string()))?
         .filter_map(|b| b.ok())
         .map(|battery| {
             use battery::State;
-            
+
             let state = match battery.state() {
                 State::Charging => "Charging",
                 State::Discharging => "Discharging",
                 State::Full => "Full",
                 State::Empty => "Empty",
                 _ => "Unknown",
-            }.to_string();
-            
+            }
+            .to_string();
+
             let percentage = battery.state_of_charge().value * 100.0;
-            
-            let time_to_empty = battery.time_to_empty()
+
+            let time_to_empty = battery
+                .time_to_empty()
                 .map(|t| format_duration(t.value as u64));
-            
-            let time_to_full = battery.time_to_full()
+
+            let time_to_full = battery
+                .time_to_full()
                 .map(|t| format_duration(t.value as u64));
-            
+
             BatteryEntry {
                 state,
                 percentage,
@@ -51,7 +55,7 @@ pub fn query_battery(_fields: &FieldList) -> Result<BatteryInfo> {
             }
         })
         .collect();
-    
+
     Ok(BatteryInfo { batteries })
 }
 
@@ -68,7 +72,7 @@ fn format_duration(seconds: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_battery_query() {
         // Battery query should not fail even without batteries
