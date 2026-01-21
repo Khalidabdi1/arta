@@ -37,7 +37,7 @@ export PATH="$PATH:/path/to/arta"
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/arta.git
+git clone https://github.com/khalidabdi1/arta.git
 cd arta
 
 # Build
