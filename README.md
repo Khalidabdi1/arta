@@ -4,6 +4,14 @@
 
 Arta is a command-line tool that lets you query and manage system state using a familiar SQL-like syntax. Think of it as SQL for your operating system.
 
+<p align="center">
+  <img 
+    src="https://pub-990fcdb7ef2f426e8a1d0578653b21c4.r2.dev/ChatGPT%20Image%2022%20%D9%8A%D9%86%D8%A7%D9%8A%D8%B1%202026%D8%8C%2005_34_12%20%D9%85.png"
+    width="720"
+    style="border-radius: 18px;"
+  />
+</p>
+
 ## Features
 
 - **SQL-like syntax** - Familiar query language for system operations
