@@ -1,3 +1,3 @@
-LIFE MONITOR BATTERY DO
-    PRINT BATTERY level, BATTERY state;
-END LIFE;
+let h = "hello world"
+
+print h

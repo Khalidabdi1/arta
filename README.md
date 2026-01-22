@@ -55,11 +55,9 @@ cargo build --release
 cargo install --path .
 ```
 
-### With Cargo
 
-```bash
-cargo install arta
-```
+
+
 
 ## Quick Start
 
