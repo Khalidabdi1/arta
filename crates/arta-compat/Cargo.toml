@@ -1,0 +1,13 @@
+[package]
+name = "arta-compat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "arta L0 git compatibility: reads and writes the .git wire format"
+
+[dependencies]
+arta-core = { path = "../arta-core" }
+thiserror.workspace = true
+tracing.workspace = true

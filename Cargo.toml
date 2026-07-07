@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/arta-core",
+    "crates/arta-compat",
+    "crates/arta-agent",
+    "crates/arta-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Khalidabdi1/arta"
+
+[workspace.dependencies]
+blake3 = "1.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tempfile = "3.10"

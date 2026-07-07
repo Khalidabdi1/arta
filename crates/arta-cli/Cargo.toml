@@ -1,0 +1,18 @@
+[package]
+name = "arta-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "arta L4 CLI: the `arta` binary for humans and agents"
+
+[[bin]]
+name = "arta"
+path = "src/main.rs"
+
+[dependencies]
+arta-core = { path = "../arta-core" }
+arta-agent = { path = "../arta-agent" }
+arta-compat = { path = "../arta-compat" }
+tracing.workspace = true
