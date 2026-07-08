@@ -11,3 +11,8 @@ description = "arta L0 git compatibility: reads and writes the .git wire format"
 arta-core = { path = "../arta-core" }
 thiserror.workspace = true
 tracing.workspace = true
+flate2.workspace = true
+sha1_smol.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
