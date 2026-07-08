@@ -4,15 +4,25 @@
 //! and the standard `.git` wire format so that every arta repository is also a
 //! valid git repository.
 //!
-//! Not yet implemented — see Phase 2 in `CLAUDE.md`. This crate is scaffolded
-//! so the workspace builds while `arta-core` (Phase 1) lands first.
+//! Phase 2 (see `CLAUDE.md`) lands the git object model here:
+//!
+//! - [`GitOid`] — SHA1 object identity, git's content address
+//! - [`GitObject`] — blob / tree / commit, with git's exact framing and parsing
+//! - [`LooseObjectStore`] — read/write of zlib-compressed loose objects in
+//!   git's `.git/objects/aa/bbbb…` layout
+//!
+//! Packfile support and full `AgentCommit` translation build on top of these in
+//! later phases.
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
-/// Errors produced by the git compatibility layer.
-#[derive(Debug, thiserror::Error)]
-pub enum CompatError {
-    /// Bridged error from the core object store.
-    #[error(transparent)]
-    Core(#[from] arta_core::ArtaError),
-}
+mod error;
+mod loose;
+mod object;
+mod oid;
+
+pub use error::CompatError;
+pub use loose::LooseObjectStore;
+pub use object::{CommitObject, FileMode, GitObject, GitObjectKind, Signature, TreeRecord};
+pub use oid::{GitOid, OID_LEN};
