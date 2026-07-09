@@ -47,7 +47,7 @@ Early, actively built out phase by phase.
 - ✅ **Phase 1 — `arta-core` foundation**: `ContentHash` (BLAKE3), deduplicating `BlobStore`, recursive `TreeSnapshot`, `AgentContext` (intent / reasoning / confidence).
 - ✅ **Phase 2 — `arta-compat` git object model**: `GitOid` (SHA1), `GitObject` (blob / tree / commit) with git's exact framing and parsing, and a `LooseObjectStore` that reads and writes zlib-compressed objects in git's `.git/objects/aa/bbbb…` layout. Object ids match git byte-for-byte — verified against `git hash-object`/`git mktree`, and real `git` reads objects arta writes (`git fsck` clean).
 - ⏳ **Phase 2 (cont.)** — packfile reader/writer.
-- ⏳ **Phase 3** — `arta-agent`: `AgentCommit`, checkpoints, task graph, rollback by intent/confidence.
+- ✅ **Phase 3 — `arta-agent` layer**: `AgentCommit` (intent-aware, parent-chained commits over `arta-core` snapshots), named `Checkpoint`s, a `TaskNode` graph (sub-tasks link to parents; commits collect on the active task), and an `AgentRepo` with a moveable `HEAD` supporting `rollback_to_intent` (exact then substring match) and `rollback_to_confidence` ("back to the last point I was sure about"). Mutable pointers persist to `.arta/state.json`; objects live in the content-addressed store. Auto-branch/merge on task open/complete lands with the branch model in a later phase.
 - ⏳ **Phase 4** — `arta-cli`: `init`, `snapshot`, `log`, `agent *`, `push`/`pull`.
 
 ---
