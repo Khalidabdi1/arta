@@ -16,3 +16,10 @@ arta-core = { path = "../arta-core" }
 arta-agent = { path = "../arta-agent" }
 arta-compat = { path = "../arta-compat" }
 tracing.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

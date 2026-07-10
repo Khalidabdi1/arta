@@ -48,7 +48,8 @@ Early, actively built out phase by phase.
 - ✅ **Phase 2 — `arta-compat` git object model**: `GitOid` (SHA1), `GitObject` (blob / tree / commit) with git's exact framing and parsing, and a `LooseObjectStore` that reads and writes zlib-compressed objects in git's `.git/objects/aa/bbbb…` layout. Object ids match git byte-for-byte — verified against `git hash-object`/`git mktree`, and real `git` reads objects arta writes (`git fsck` clean).
 - ⏳ **Phase 2 (cont.)** — packfile reader/writer.
 - ✅ **Phase 3 — `arta-agent` layer**: `AgentCommit` (intent-aware, parent-chained commits over `arta-core` snapshots), named `Checkpoint`s, a `TaskNode` graph (sub-tasks link to parents; commits collect on the active task), and an `AgentRepo` with a moveable `HEAD` supporting `rollback_to_intent` (exact then substring match) and `rollback_to_confidence` ("back to the last point I was sure about"). Mutable pointers persist to `.arta/state.json`; objects live in the content-addressed store. Auto-branch/merge on task open/complete lands with the branch model in a later phase.
-- ⏳ **Phase 4** — `arta-cli`: `init`, `snapshot`, `log`, `agent *`, `push`/`pull`.
+- ✅ **Phase 4 — `arta-cli`**: the `arta` binary now drives the agent layer end to end. `init` creates a repository; `snapshot` hashes the working tree and records an intent commit; `status` and `log` (human or `--json`) read history; and `agent commit` / `checkpoint` / `rollback --to-intent|--to-confidence` / `task open|complete|list` expose the richer API. Commands discover the repository by walking up to the nearest `.arta`, and errors render as single human-readable lines with a non-zero exit code.
+- ⏳ **Phase 4 (cont.)** — `push`/`pull` delegation to `arta-compat` (waits on the packfile writer).
 
 ---
 
@@ -73,16 +74,16 @@ cargo build -p arta-core --target wasm32-unknown-unknown
 
 ---
 
-## Planned CLI
+## CLI
 
-Human commands mirror familiar git UX; agent commands expose the richer API.
+Human commands mirror familiar git UX; agent commands expose the richer API. Everything below works today except `push`/`pull`, which wait on the packfile writer.
 
 ```bash
 # Human-facing
-arta init
-arta snapshot                       # replaces `git add` + `git commit`
-arta log --show-intent
-arta push / pull                    # delegates to arta-compat
+arta init                                    # create a repository here
+arta snapshot --intent "..." [--confidence 0.9] [--reasoning "..."]
+arta status                                  # HEAD, active task, counts
+arta log [--show-intent] [--json]
 
 # Agent-facing
 arta agent commit --intent "..." --confidence 0.9
@@ -90,7 +91,12 @@ arta agent checkpoint --reason "before_risky_refactor"
 arta agent rollback --to-intent "working auth"
 arta agent rollback --to-confidence 0.8
 arta agent task open "refactor auth module"
-arta agent log --format json        # machine-readable output
+arta agent task complete <uuid>
+arta agent task list
+arta agent log                               # machine-readable JSON
+
+# Not yet wired up:
+# arta push / pull                           # will delegate to arta-compat
 ```
 
 ---
