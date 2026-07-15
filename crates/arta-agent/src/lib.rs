@@ -4,15 +4,16 @@
 //! rollback by intent or confidence. This is the layer that makes arta
 //! different from git.
 //!
-//! Not yet implemented — see Phase 3 in `CLAUDE.md`. This crate is scaffolded
-//! so the workspace builds while `arta-core` (Phase 1) lands first.
+//! Phase 3 lands here incrementally (see `CLAUDE.md`). Implemented so far:
+//!
+//! - [`AgentCommit`] — creation and content-addressed storage of an
+//!   intent-aware commit.
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
-/// Errors produced by the agent layer.
-#[derive(Debug, thiserror::Error)]
-pub enum AgentError {
-    /// Bridged error from the core object store.
-    #[error(transparent)]
-    Core(#[from] arta_core::ArtaError),
-}
+mod commit;
+mod error;
+
+pub use commit::AgentCommit;
+pub use error::AgentError;
